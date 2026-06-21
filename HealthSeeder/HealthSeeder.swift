@@ -30,131 +30,85 @@ class HealthSeeder: ObservableObject {
     let store = HKHealthStore()
 
     @Published var categories: [SeedCategory] = [
-        SeedCategory(name: "Activity & Steps",           icon: "figure.walk"),
-        SeedCategory(name: "Heart Rate",                 icon: "heart.fill"),
-        SeedCategory(name: "Sleep",                      icon: "moon.fill"),
-        SeedCategory(name: "Body Measurements",          icon: "scalemass.fill"),
-        SeedCategory(name: "Nutrition",                  icon: "fork.knife"),
-        SeedCategory(name: "Hydration",                  icon: "drop.fill"),
-        SeedCategory(name: "Workouts",                   icon: "dumbbell.fill"),
-        SeedCategory(name: "Blood Oxygen",               icon: "lungs.fill"),
-        SeedCategory(name: "Blood Glucose",              icon: "cross.vial.fill"),
-        SeedCategory(name: "Blood Pressure",             icon: "waveform.path.ecg"),
-        SeedCategory(name: "Body Temperature",           icon: "thermometer.medium"),
-        SeedCategory(name: "Respiration",                icon: "wind"),
-        SeedCategory(name: "Mindfulness",                icon: "brain.head.profile"),
-        SeedCategory(name: "Menstrual Cycle",            icon: "calendar.badge.clock"),
-        SeedCategory(name: "Hearing",                    icon: "ear.fill"),
-        SeedCategory(name: "Reproductive Health",        icon: "staroflife.fill"),
-        SeedCategory(name: "Vitamins & Supplements",     icon: "pills.fill"),
-        SeedCategory(name: "Lab Results",                icon: "testtube.2"),
-        SeedCategory(name: "Walking Metrics",            icon: "figure.walk.motion"),
-        SeedCategory(name: "Wrist Temp (system-only)",   icon: "thermometer.sun.fill"),
-        SeedCategory(name: "Daylight Exposure",          icon: "sun.max.fill"),
+        SeedCategory(name: "Activity & Steps",          icon: "figure.walk"),
+        SeedCategory(name: "Heart Rate",                icon: "heart.fill"),
+        SeedCategory(name: "Sleep",                     icon: "moon.fill"),
+        SeedCategory(name: "Body Measurements",         icon: "scalemass.fill"),
+        SeedCategory(name: "Nutrition",                 icon: "fork.knife"),
+        SeedCategory(name: "Hydration",                 icon: "drop.fill"),
+        SeedCategory(name: "Workouts",                  icon: "dumbbell.fill"),
+        SeedCategory(name: "Blood Oxygen",              icon: "lungs.fill"),
+        SeedCategory(name: "Blood Glucose",             icon: "cross.vial.fill"),
+        SeedCategory(name: "Blood Pressure",            icon: "waveform.path.ecg"),
+        SeedCategory(name: "Body Temperature",          icon: "thermometer.medium"),
+        SeedCategory(name: "Respiration",               icon: "wind"),
+        SeedCategory(name: "Mindfulness",               icon: "brain.head.profile"),
+        SeedCategory(name: "Menstrual Cycle",           icon: "calendar.badge.clock"),
+        SeedCategory(name: "Hearing",                   icon: "ear.fill"),
+        SeedCategory(name: "Reproductive Health",       icon: "staroflife.fill"),
+        SeedCategory(name: "Vitamins & Supplements",    icon: "pills.fill"),
+        SeedCategory(name: "Lab Results",               icon: "testtube.2"),
+        SeedCategory(name: "Walking Metrics",           icon: "figure.walk.motion"),
+        SeedCategory(name: "Wrist Temp (system-only)",  icon: "thermometer.sun.fill"),
+        SeedCategory(name: "Daylight Exposure",         icon: "sun.max.fill"),
     ]
 
     @Published var isRunning = false
     @Published var isComplete = false
+    @Published var isDeleting = false
     @Published var overallProgress: Double = 0
     @Published var authError: String? = nil
+    @Published var deleteResult: DeleteResult? = nil
     @Published var days: Int = 365
 
-    // MARK: - Auth
+    enum DeleteResult {
+        case success(Int)
+        case failure(String)
+    }
+
+    // MARK: - All writable types (flat list reused for auth + delete)
+
+    var allQuantityTypes: [HKQuantityTypeIdentifier] {
+        [
+            .stepCount, .distanceWalkingRunning, .activeEnergyBurned, .basalEnergyBurned, .flightsClimbed,
+            .heartRate, .restingHeartRate, .heartRateVariabilitySDNN, .vo2Max,
+            .bodyMass, .bodyMassIndex, .bodyFatPercentage, .leanBodyMass, .height, .waistCircumference,
+            .dietaryEnergyConsumed, .dietaryProtein, .dietaryCarbohydrates, .dietaryFatTotal,
+            .dietaryFiber, .dietaryWater, .dietarySodium, .dietarySugar, .dietaryCholesterol,
+            .dietaryVitaminC, .dietaryVitaminD, .dietaryCalcium, .dietaryIron, .dietaryMagnesium,
+            .dietaryZinc, .dietaryPotassium, .dietaryVitaminB12, .dietaryFolate,
+            .oxygenSaturation, .bloodGlucose, .bloodPressureSystolic, .bloodPressureDiastolic,
+            .bodyTemperature, .respiratoryRate, .peripheralPerfusionIndex,
+            .environmentalAudioExposure, .headphoneAudioExposure,
+            .basalBodyTemperature,
+            .walkingSpeed, .walkingStepLength, .walkingDoubleSupportPercentage,
+            .stairAscentSpeed, .stairDescentSpeed,
+            .timeInDaylight,
+        ]
+    }
+
+    var allCategoryTypeIdentifiers: [HKCategoryTypeIdentifier] {
+        [.sleepAnalysis, .mindfulSession, .menstrualFlow, .cervicalMucusQuality,
+         .ovulationTestResult, .intermenstrualBleeding]
+    }
 
     var allTypesToWrite: Set<HKSampleType> {
-        var types: Set<HKSampleType> = [
-            // Activity
-            .quantityType(forIdentifier: .stepCount)!,
-            .quantityType(forIdentifier: .distanceWalkingRunning)!,
-            .quantityType(forIdentifier: .activeEnergyBurned)!,
-            .quantityType(forIdentifier: .basalEnergyBurned)!,
-            .quantityType(forIdentifier: .flightsClimbed)!,
-
-            // Heart
-            .quantityType(forIdentifier: .heartRate)!,
-            .quantityType(forIdentifier: .restingHeartRate)!,
-            .quantityType(forIdentifier: .heartRateVariabilitySDNN)!,
-            .quantityType(forIdentifier: .vo2Max)!,
-
-            // Body
-            .quantityType(forIdentifier: .bodyMass)!,
-            .quantityType(forIdentifier: .bodyMassIndex)!,
-            .quantityType(forIdentifier: .bodyFatPercentage)!,
-            .quantityType(forIdentifier: .leanBodyMass)!,
-            .quantityType(forIdentifier: .height)!,
-            .quantityType(forIdentifier: .waistCircumference)!,
-
-            // Nutrition
-            .quantityType(forIdentifier: .dietaryEnergyConsumed)!,
-            .quantityType(forIdentifier: .dietaryProtein)!,
-            .quantityType(forIdentifier: .dietaryCarbohydrates)!,
-            .quantityType(forIdentifier: .dietaryFatTotal)!,
-            .quantityType(forIdentifier: .dietaryFiber)!,
-            .quantityType(forIdentifier: .dietaryWater)!,
-            .quantityType(forIdentifier: .dietarySodium)!,
-            .quantityType(forIdentifier: .dietarySugar)!,
-            .quantityType(forIdentifier: .dietaryCholesterol)!,
-            .quantityType(forIdentifier: .dietaryVitaminC)!,
-            .quantityType(forIdentifier: .dietaryVitaminD)!,
-            .quantityType(forIdentifier: .dietaryCalcium)!,
-            .quantityType(forIdentifier: .dietaryIron)!,
-            .quantityType(forIdentifier: .dietaryMagnesium)!,
-            .quantityType(forIdentifier: .dietaryZinc)!,
-            .quantityType(forIdentifier: .dietaryPotassium)!,
-            .quantityType(forIdentifier: .dietaryVitaminB12)!,
-            .quantityType(forIdentifier: .dietaryFolate)!,
-
-            // Vitals
-            .quantityType(forIdentifier: .oxygenSaturation)!,
-            .quantityType(forIdentifier: .bloodGlucose)!,
-            .quantityType(forIdentifier: .bloodPressureSystolic)!,
-            .quantityType(forIdentifier: .bloodPressureDiastolic)!,
-            .quantityType(forIdentifier: .bodyTemperature)!,
-            .quantityType(forIdentifier: .respiratoryRate)!,
-            .quantityType(forIdentifier: .peripheralPerfusionIndex)!,
-
-            // Hearing
-            .quantityType(forIdentifier: .environmentalAudioExposure)!,
-            .quantityType(forIdentifier: .headphoneAudioExposure)!,
-
-            // Reproductive
-            .quantityType(forIdentifier: .basalBodyTemperature)!,
-
-            // Walking metrics
-            .quantityType(forIdentifier: .walkingSpeed)!,
-            .quantityType(forIdentifier: .walkingStepLength)!,
-            .quantityType(forIdentifier: .walkingDoubleSupportPercentage)!,
-            .quantityType(forIdentifier: .stairAscentSpeed)!,
-            .quantityType(forIdentifier: .stairDescentSpeed)!,
-
-            // Daylight
-            .quantityType(forIdentifier: .timeInDaylight)!,
-
-            // Workouts
-            HKWorkoutType.workoutType(),
-        ]
-
-        // Category types
-        types.insert(HKCategoryType(.sleepAnalysis))
-        types.insert(HKCategoryType(.mindfulSession))
-        types.insert(HKCategoryType(.menstrualFlow))
-        types.insert(HKCategoryType(.cervicalMucusQuality))
-        types.insert(HKCategoryType(.ovulationTestResult))
-        types.insert(HKCategoryType(.intermenstrualBleeding))
-
+        var types: Set<HKSampleType> = Set(allQuantityTypes.compactMap { HKQuantityType.quantityType(forIdentifier: $0) })
+        for id in allCategoryTypeIdentifiers { types.insert(HKCategoryType(id)) }
+        types.insert(HKWorkoutType.workoutType())
         return types
     }
 
+    // MARK: - Auth
+
     func requestAuth() async {
-        // iOS times out when requesting too many types at once.
-        // Split into batches of 15 and request sequentially.
         let allTypes = Array(allTypesToWrite)
         let batchSize = 15
         var index = 0
         while index < allTypes.count {
             let batch = Set(allTypes[index..<min(index + batchSize, allTypes.count)])
             do {
-                try await store.requestAuthorization(toShare: batch, read: [])
+                try await store.requestAuthorization(toShare: batch, read: batch)
             } catch {
                 authError = error.localizedDescription
                 return
@@ -214,9 +168,98 @@ class HealthSeeder: ObservableObject {
         }
     }
 
+    // MARK: - Delete All Seeded Data
+
+    func deleteAllSeededData() async {
+        isDeleting = true
+        deleteResult = nil
+
+        let bundleID = Bundle.main.bundleIdentifier ?? ""
+        let predicate = HKQuery.predicateForObjects(from: HKSource.default())
+        let start = Date.distantPast
+        let end = Date()
+        let timePredicate = HKQuery.predicateForSamples(withStart: start, end: end)
+        let combined = NSCompoundPredicate(andPredicateWithSubpredicates: [predicate, timePredicate])
+
+        var totalDeleted = 0
+        var firstError: String? = nil
+
+        // Delete quantity types
+        for id in allQuantityTypes {
+            guard let type = HKQuantityType.quantityType(forIdentifier: id) else { continue }
+            do {
+                let samples = try await fetchSamples(type: type, predicate: combined)
+                if !samples.isEmpty {
+                    try await store.delete(samples)
+                    totalDeleted += samples.count
+                }
+            } catch {
+                if firstError == nil { firstError = error.localizedDescription }
+            }
+        }
+
+        // Delete category types
+        for id in allCategoryTypeIdentifiers {
+            let type = HKCategoryType(id)
+            do {
+                let samples = try await fetchSamples(type: type, predicate: combined)
+                if !samples.isEmpty {
+                    try await store.delete(samples)
+                    totalDeleted += samples.count
+                }
+            } catch {
+                if firstError == nil { firstError = error.localizedDescription }
+            }
+        }
+
+        // Delete workouts
+        do {
+            let workouts = try await fetchSamples(type: HKWorkoutType.workoutType(), predicate: combined)
+            if !workouts.isEmpty {
+                try await store.delete(workouts)
+                totalDeleted += workouts.count
+            }
+        } catch {
+            if firstError == nil { firstError = error.localizedDescription }
+        }
+
+        isDeleting = false
+
+        if let err = firstError, totalDeleted == 0 {
+            deleteResult = .failure(err)
+        } else {
+            deleteResult = .success(totalDeleted)
+            // Reset category statuses
+            for i in categories.indices {
+                categories[i].status = .pending
+                categories[i].count = 0
+            }
+            isComplete = false
+        }
+    }
+
+    private func fetchSamples(type: HKSampleType, predicate: NSPredicate) async throws -> [HKSample] {
+        try await withCheckedThrowingContinuation { continuation in
+            let query = HKSampleQuery(
+                sampleType: type,
+                predicate: predicate,
+                limit: HKObjectQueryNoLimit,
+                sortDescriptors: nil
+            ) { _, samples, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(returning: samples ?? [])
+                }
+            }
+            store.execute(query)
+        }
+    }
+
     // MARK: - Helpers
 
     private func save(_ samples: [HKSample]) async throws {
+        guard !samples.isEmpty else { return }
         try await store.save(samples)
     }
 
@@ -238,7 +281,6 @@ class HealthSeeder: ObservableObject {
             let day = calendar.date(byAdding: .day, value: -dayOffset, to: Date())!
             let dayStart = calendar.startOfDay(for: day)
 
-            // Steps with hourly distribution
             let totalSteps = Int(randomBetween(4000, 14000))
             let stepBuckets = distributeSteps(totalSteps, over: dayStart)
             for (start, steps) in stepBuckets {
@@ -246,24 +288,14 @@ class HealthSeeder: ObservableObject {
                 samples.append(quantitySample(type: .stepCount, quantity: q, start: start, end: start.addingTimeInterval(3600)))
             }
 
-            // Distance
             let distance = Double(totalSteps) * randomBetween(0.0007, 0.0009) * 1000
-            let dq = HKQuantity(unit: .meter(), doubleValue: distance)
-            samples.append(quantitySample(type: .distanceWalkingRunning, quantity: dq, start: dayStart, end: dayStart.addingTimeInterval(86400)))
+            samples.append(quantitySample(type: .distanceWalkingRunning, quantity: HKQuantity(unit: .meter(), doubleValue: distance), start: dayStart, end: dayStart.addingTimeInterval(86400)))
+            samples.append(quantitySample(type: .activeEnergyBurned, quantity: HKQuantity(unit: .kilocalorie(), doubleValue: randomBetween(200, 900)), start: dayStart, end: dayStart.addingTimeInterval(86400)))
+            samples.append(quantitySample(type: .basalEnergyBurned, quantity: HKQuantity(unit: .kilocalorie(), doubleValue: randomBetween(1400, 1900)), start: dayStart, end: dayStart.addingTimeInterval(86400)))
 
-            // Active calories
-            let aq = HKQuantity(unit: .kilocalorie(), doubleValue: randomBetween(200, 900))
-            samples.append(quantitySample(type: .activeEnergyBurned, quantity: aq, start: dayStart, end: dayStart.addingTimeInterval(86400)))
-
-            // Basal calories
-            let bq = HKQuantity(unit: .kilocalorie(), doubleValue: randomBetween(1400, 1900))
-            samples.append(quantitySample(type: .basalEnergyBurned, quantity: bq, start: dayStart, end: dayStart.addingTimeInterval(86400)))
-
-            // Flights climbed
             let flights = Int(randomBetween(0, 25))
             if flights > 0 {
-                let fq = HKQuantity(unit: .count(), doubleValue: Double(flights))
-                samples.append(quantitySample(type: .flightsClimbed, quantity: fq, start: dayStart, end: dayStart.addingTimeInterval(86400)))
+                samples.append(quantitySample(type: .flightsClimbed, quantity: HKQuantity(unit: .count(), doubleValue: Double(flights)), start: dayStart, end: dayStart.addingTimeInterval(86400)))
             }
         }
 
@@ -273,15 +305,12 @@ class HealthSeeder: ObservableObject {
 
     private func distributeSteps(_ total: Int, over dayStart: Date) -> [(Date, Int)] {
         let weights: [Double] = [0,0,0,0,0,0.02,0.05,0.10,0.12,0.10,0.08,0.07,0.08,0.07,0.08,0.07,0.05,0.06,0.05,0.04,0.02,0.01,0.01,0]
-        var result: [(Date, Int)] = []
-        for (hour, weight) in weights.enumerated() {
-            if weight > 0 {
-                let steps = Int(Double(total) * weight * Double.random(in: 0.8...1.2))
-                let start = dayStart.addingTimeInterval(Double(hour) * 3600)
-                result.append((start, max(steps, 0)))
-            }
+        return weights.enumerated().compactMap { hour, weight in
+            guard weight > 0 else { return nil }
+            let steps = Int(Double(total) * weight * Double.random(in: 0.8...1.2))
+            let start = dayStart.addingTimeInterval(Double(hour) * 3600)
+            return (start, max(steps, 0))
         }
-        return result
     }
 
     // MARK: - Heart Rate
@@ -295,31 +324,20 @@ class HealthSeeder: ObservableObject {
             let dayStart = calendar.startOfDay(for: day)
 
             for hour in 0..<24 {
-                let readingsCount = Int.random(in: 1...3)
-                for r in 0..<readingsCount {
-                    let minute = Int.random(in: 0...59)
-                    let ts = dayStart.addingTimeInterval(Double(hour * 3600 + minute * 60 + r * 300))
-                    let bpm: Double
-                    if hour >= 1 && hour <= 5 { bpm = randomBetween(48, 62) }
-                    else if hour >= 6 && hour <= 8 { bpm = randomBetween(65, 85) }
-                    else { bpm = randomBetween(60, 100) }
-                    let q = HKQuantity(unit: HKUnit(from: "count/min"), doubleValue: bpm)
-                    samples.append(quantitySample(type: .heartRate, quantity: q, start: ts))
+                for r in 0..<Int.random(in: 1...3) {
+                    let ts = dayStart.addingTimeInterval(Double(hour * 3600 + Int.random(in: 0...59) * 60 + r * 300))
+                    let bpm: Double = hour >= 1 && hour <= 5 ? randomBetween(48, 62) :
+                                      hour >= 6 && hour <= 8 ? randomBetween(65, 85) :
+                                      randomBetween(60, 100)
+                    samples.append(quantitySample(type: .heartRate, quantity: HKQuantity(unit: HKUnit(from: "count/min"), doubleValue: bpm), start: ts))
                 }
             }
 
-            // Resting HR
-            let rq = HKQuantity(unit: HKUnit(from: "count/min"), doubleValue: randomBetween(50, 72))
-            samples.append(quantitySample(type: .restingHeartRate, quantity: rq, start: dayStart.addingTimeInterval(28800)))
+            samples.append(quantitySample(type: .restingHeartRate, quantity: HKQuantity(unit: HKUnit(from: "count/min"), doubleValue: randomBetween(50, 72)), start: dayStart.addingTimeInterval(28800)))
+            samples.append(quantitySample(type: .heartRateVariabilitySDNN, quantity: HKQuantity(unit: .secondUnit(with: .milli), doubleValue: randomBetween(20, 80)), start: dayStart.addingTimeInterval(25200)))
 
-            // HRV
-            let hq = HKQuantity(unit: .secondUnit(with: .milli), doubleValue: randomBetween(20, 80))
-            samples.append(quantitySample(type: .heartRateVariabilitySDNN, quantity: hq, start: dayStart.addingTimeInterval(25200)))
-
-            // VO2Max weekly
             if dayOffset % 7 == 0 {
-                let vq = HKQuantity(unit: HKUnit(from: "ml/kg*min"), doubleValue: randomBetween(35, 55))
-                samples.append(quantitySample(type: .vo2Max, quantity: vq, start: dayStart.addingTimeInterval(36000)))
+                samples.append(quantitySample(type: .vo2Max, quantity: HKQuantity(unit: HKUnit(from: "ml/kg*min"), doubleValue: randomBetween(35, 55)), start: dayStart.addingTimeInterval(36000)))
             }
         }
 
@@ -328,22 +346,34 @@ class HealthSeeder: ObservableObject {
     }
 
     // MARK: - Sleep
+    // Each night is a single continuous chain of sequential, non-overlapping stage blocks.
+    // The cursor advances strictly forward — no gaps, no overlaps guaranteed.
 
     func seedSleep() async throws -> Int {
         var samples: [HKSample] = []
         let calendar = Calendar.current
-        let type = HKCategoryType(.sleepAnalysis)
+        let sleepType = HKCategoryType(.sleepAnalysis)
 
         for dayOffset in 0..<days {
             let day = calendar.date(byAdding: .day, value: -dayOffset, to: Date())!
-            // Bedtime: 10pm–midnight
-            let bedtimeHour = Int.random(in: 22...23)
-            let bedtime = Calendar.current.date(bySettingHour: bedtimeHour, minute: Int.random(in: 0...59), second: 0, of: day)!
-            let totalSleepMin = Int.random(in: 360...510)
 
-            let stageBlocks = generateSleepStages(total: totalSleepMin, start: bedtime)
-            for (start, end, value) in stageBlocks {
-                samples.append(HKCategorySample(type: type, value: value.rawValue, start: start, end: end))
+            // Bedtime on the previous calendar day (e.g. night of day N starts on day N)
+            let bedtimeHour = Int.random(in: 22...23)
+            let bedtimeMinute = Int.random(in: 0...59)
+            guard let bedtime = calendar.date(bySettingHour: bedtimeHour, minute: bedtimeMinute, second: 0, of: day) else { continue }
+
+            let totalSleepMinutes = Int.random(in: 380...510) // ~6.5–8.5 h
+
+            // Build a strictly sequential chain of stage blocks
+            let blocks = buildSleepChain(startingAt: bedtime, totalMinutes: totalSleepMinutes)
+
+            for (blockStart, blockEnd, stage) in blocks {
+                samples.append(HKCategorySample(
+                    type: sleepType,
+                    value: stage.rawValue,
+                    start: blockStart,
+                    end: blockEnd
+                ))
             }
         }
 
@@ -351,32 +381,52 @@ class HealthSeeder: ObservableObject {
         return samples.count
     }
 
-    private func generateSleepStages(total: Int, start: Date) -> [(Date, Date, HKCategoryValueSleepAnalysis)] {
-        // Realistic cycle: Core -> Deep -> REM -> Core -> brief Awake, repeat
-        let cycleOrder: [HKCategoryValueSleepAnalysis] = [
-            .asleepCore, .asleepDeep, .asleepREM, .asleepCore, .awake
+    /// Produces a chain of (start, end, stage) tuples that are:
+    /// - strictly sequential (end of block N == start of block N+1)
+    /// - non-overlapping by construction
+    /// - covering exactly `totalMinutes` from `startingAt`
+    private func buildSleepChain(startingAt bedtime: Date, totalMinutes: Int) -> [(Date, Date, HKCategoryValueSleepAnalysis)] {
+
+        // Realistic 90-min NREM/REM cycle pattern repeated through the night
+        // Earlier cycles: more deep sleep. Later cycles: more REM.
+        let cyclePattern: [HKCategoryValueSleepAnalysis] = [
+            .asleepCore, .asleepDeep, .asleepCore, .asleepREM,
+            .asleepCore, .asleepDeep, .asleepCore, .asleepREM,
+            .asleepCore,              .asleepCore, .asleepREM,
+            .awake,
+            .asleepCore,                           .asleepREM,
+            .awake,
         ]
-        let durationRanges: [HKCategoryValueSleepAnalysis: ClosedRange<Int>] = [
-            .asleepCore: 20...50,
-            .asleepDeep: 10...40,
-            .asleepREM:  15...45,
-            .awake:       2...8,
+
+        let durationRange: [HKCategoryValueSleepAnalysis: ClosedRange<Int>] = [
+            .asleepCore: 18...45,
+            .asleepDeep: 10...35,
+            .asleepREM:  12...40,
+            .awake:       2...6,
         ]
+
         var result: [(Date, Date, HKCategoryValueSleepAnalysis)] = []
-        var cursor = start
-        var remaining = total
-        var cycleIndex = 0
+        var cursor = bedtime
+        var remaining = totalMinutes
+        var patternIndex = 0
 
         while remaining > 0 {
-            let stage = cycleOrder[cycleIndex % cycleOrder.count]
-            let range = durationRanges[stage] ?? 20...40
-            let duration = min(Int.random(in: range), remaining)
-            let end = cursor.addingTimeInterval(Double(duration) * 60)
-            result.append((cursor, end, stage))
-            cursor = end
+            let stage = cyclePattern[patternIndex % cyclePattern.count]
+            let range = durationRange[stage] ?? 20...40
+            // Clamp duration so we never exceed the total — this is the key fix for overlaps
+            let maxAllowed = min(range.upperBound, remaining)
+            let minAllowed = min(range.lowerBound, maxAllowed)
+            let duration = Int.random(in: minAllowed...maxAllowed)
+
+            let blockEnd = cursor.addingTimeInterval(Double(duration) * 60)
+            result.append((cursor, blockEnd, stage))
+
+            // Advance cursor — next block starts exactly where this one ended
+            cursor = blockEnd
             remaining -= duration
-            cycleIndex += 1
+            patternIndex += 1
         }
+
         return result
     }
 
@@ -390,16 +440,13 @@ class HealthSeeder: ObservableObject {
         let height = randomBetween(165, 185)
         let bodyFat = randomBetween(12, 28)
 
-        let hq = HKQuantity(unit: .meterUnit(with: .centi), doubleValue: height)
-        samples.append(quantitySample(type: .height, quantity: hq, start: Date().addingTimeInterval(-Double(days) * 86400)))
+        samples.append(quantitySample(type: .height, quantity: HKQuantity(unit: .meterUnit(with: .centi), doubleValue: height), start: Date().addingTimeInterval(-Double(days) * 86400)))
 
         for dayOffset in stride(from: 0, to: days, by: 3) {
             let day = calendar.date(byAdding: .day, value: -dayOffset, to: Date())!
-            let ts = Calendar.current.date(bySettingHour: 7, minute: 30, second: 0, of: day)!
+            let ts = calendar.date(bySettingHour: 7, minute: 30, second: 0, of: day)!
 
-            weight += Double.random(in: -0.3...0.3)
-            weight = max(60, min(120, weight))
-
+            weight = max(60, min(120, weight + Double.random(in: -0.3...0.3)))
             let bmi = weight / pow(height / 100, 2)
             let lean = weight * (1 - bodyFat / 100)
 
@@ -467,8 +514,7 @@ class HealthSeeder: ObservableObject {
 
             for hour in [7, 9, 11, 13, 15, 17, 19, 21] {
                 let ts = dayStart.addingTimeInterval(Double(hour * 3600))
-                let q = HKQuantity(unit: .literUnit(with: .milli), doubleValue: randomBetween(150, 400))
-                samples.append(quantitySample(type: .dietaryWater, quantity: q, start: ts))
+                samples.append(quantitySample(type: .dietaryWater, quantity: HKQuantity(unit: .literUnit(with: .milli), doubleValue: randomBetween(150, 400)), start: ts))
             }
         }
 
@@ -484,7 +530,6 @@ class HealthSeeder: ObservableObject {
             .running, .cycling, .walking, .swimming, .functionalStrengthTraining,
             .yoga, .highIntensityIntervalTraining, .elliptical, .rowing
         ]
-
         var count = 0
 
         for dayOffset in 0..<days {
@@ -492,10 +537,9 @@ class HealthSeeder: ObservableObject {
             let day = calendar.date(byAdding: .day, value: -dayOffset, to: Date())!
             let workoutType = workoutTypes.randomElement()!
             let hour = Int.random(in: 6...19)
-            let start = Calendar.current.date(bySettingHour: hour, minute: Int.random(in: 0...30), second: 0, of: day)!
+            let start = calendar.date(bySettingHour: hour, minute: Int.random(in: 0...30), second: 0, of: day)!
             let duration = TimeInterval(Int.random(in: 20...90) * 60)
             let end = start.addingTimeInterval(duration)
-            let calories = randomBetween(150, 700)
 
             let config = HKWorkoutConfiguration()
             config.activityType = workoutType
@@ -503,14 +547,12 @@ class HealthSeeder: ObservableObject {
 
             try await builder.beginCollection(at: start)
 
-            let aeq = HKQuantity(unit: .kilocalorie(), doubleValue: calories)
-            let aeSample = HKQuantitySample(type: HKQuantityType(.activeEnergyBurned), quantity: aeq, start: start, end: end)
+            let aeSample = HKQuantitySample(type: HKQuantityType(.activeEnergyBurned), quantity: HKQuantity(unit: .kilocalorie(), doubleValue: randomBetween(150, 700)), start: start, end: end)
             try await builder.addSamples([aeSample])
 
-            if workoutType == .running || workoutType == .cycling || workoutType == .walking {
-                let distValue = workoutType == .cycling ? randomBetween(5000, 40000) : randomBetween(2000, 12000)
-                let dq = HKQuantity(unit: .meter(), doubleValue: distValue)
-                let dSample = HKQuantitySample(type: HKQuantityType(.distanceWalkingRunning), quantity: dq, start: start, end: end)
+            if [.running, .cycling, .walking].contains(workoutType) {
+                let dist = workoutType == .cycling ? randomBetween(5000, 40000) : randomBetween(2000, 12000)
+                let dSample = HKQuantitySample(type: HKQuantityType(.distanceWalkingRunning), quantity: HKQuantity(unit: .meter(), doubleValue: dist), start: start, end: end)
                 try await builder.addSamples([dSample])
             }
 
@@ -533,10 +575,8 @@ class HealthSeeder: ObservableObject {
             let dayStart = calendar.startOfDay(for: day)
 
             for _ in 0..<Int.random(in: 4...8) {
-                let hour = Int.random(in: 0...23)
-                let ts = dayStart.addingTimeInterval(Double(hour * 3600 + Int.random(in: 0...3599)))
-                let q = HKQuantity(unit: .percent(), doubleValue: randomBetween(0.94, 0.99))
-                samples.append(quantitySample(type: .oxygenSaturation, quantity: q, start: ts))
+                let ts = dayStart.addingTimeInterval(Double(Int.random(in: 0...86399)))
+                samples.append(quantitySample(type: .oxygenSaturation, quantity: HKQuantity(unit: .percent(), doubleValue: randomBetween(0.94, 0.99)), start: ts))
             }
         }
 
@@ -558,8 +598,7 @@ class HealthSeeder: ObservableObject {
             for (hour, value) in [(7, randomBetween(70, 100)), (9, randomBetween(90, 140)),
                                    (12, randomBetween(80, 110)), (14, randomBetween(90, 150)),
                                    (19, randomBetween(80, 110)), (21, randomBetween(90, 140))] {
-                let ts = dayStart.addingTimeInterval(Double(hour * 3600))
-                samples.append(quantitySample(type: .bloodGlucose, quantity: HKQuantity(unit: unit, doubleValue: value), start: ts))
+                samples.append(quantitySample(type: .bloodGlucose, quantity: HKQuantity(unit: unit, doubleValue: value), start: dayStart.addingTimeInterval(Double(hour * 3600))))
             }
         }
 
@@ -578,13 +617,15 @@ class HealthSeeder: ObservableObject {
             let day = calendar.date(byAdding: .day, value: -dayOffset, to: Date())!
 
             for hour in [7, 13, 19] {
-                let ts = Calendar.current.date(bySettingHour: hour, minute: Int.random(in: 0...30), second: 0, of: day)!
-                samples.append(quantitySample(type: .bloodPressureSystolic, quantity: HKQuantity(unit: mmHg, doubleValue: randomBetween(110, 135)), start: ts))
-                samples.append(quantitySample(type: .bloodPressureDiastolic, quantity: HKQuantity(unit: mmHg, doubleValue: randomBetween(65, 85)), start: ts))
+                let ts = calendar.date(bySettingHour: hour, minute: Int.random(in: 0...30), second: 0, of: day)!
+                let systolic = HKQuantitySample(type: HKQuantityType(.bloodPressureSystolic), quantity: HKQuantity(unit: mmHg, doubleValue: randomBetween(110, 135)), start: ts, end: ts)
+                let diastolic = HKQuantitySample(type: HKQuantityType(.bloodPressureDiastolic), quantity: HKQuantity(unit: mmHg, doubleValue: randomBetween(65, 85)), start: ts, end: ts)
+                // HealthKit requires both pressure types saved together in the same call
+                try await store.save([systolic, diastolic])
+                samples.append(contentsOf: [systolic, diastolic])
             }
         }
 
-        try await save(samples)
         return samples.count
     }
 
@@ -596,9 +637,8 @@ class HealthSeeder: ObservableObject {
 
         for dayOffset in 0..<days {
             let day = calendar.date(byAdding: .day, value: -dayOffset, to: Date())!
-            let ts = Calendar.current.date(bySettingHour: 8, minute: 0, second: 0, of: day)!
-            let q = HKQuantity(unit: .degreeCelsius(), doubleValue: randomBetween(36.2, 37.2))
-            samples.append(quantitySample(type: .bodyTemperature, quantity: q, start: ts))
+            let ts = calendar.date(bySettingHour: 8, minute: 0, second: 0, of: day)!
+            samples.append(quantitySample(type: .bodyTemperature, quantity: HKQuantity(unit: .degreeCelsius(), doubleValue: randomBetween(36.2, 37.2)), start: ts))
         }
 
         try await save(samples)
@@ -616,9 +656,7 @@ class HealthSeeder: ObservableObject {
             let dayStart = calendar.startOfDay(for: day)
 
             for hour in [8, 12, 16, 20, 23] {
-                let ts = dayStart.addingTimeInterval(Double(hour * 3600))
-                let q = HKQuantity(unit: HKUnit(from: "count/min"), doubleValue: randomBetween(12, 20))
-                samples.append(quantitySample(type: .respiratoryRate, quantity: q, start: ts))
+                samples.append(quantitySample(type: .respiratoryRate, quantity: HKQuantity(unit: HKUnit(from: "count/min"), doubleValue: randomBetween(12, 20)), start: dayStart.addingTimeInterval(Double(hour * 3600))))
             }
         }
 
@@ -636,7 +674,7 @@ class HealthSeeder: ObservableObject {
         for dayOffset in 0..<days {
             guard dayOffset % 2 == 0 || Bool.random() else { continue }
             let day = calendar.date(byAdding: .day, value: -dayOffset, to: Date())!
-            let ts = Calendar.current.date(bySettingHour: 7, minute: Int.random(in: 0...30), second: 0, of: day)!
+            let ts = calendar.date(bySettingHour: 7, minute: Int.random(in: 0...30), second: 0, of: day)!
             let duration = TimeInterval(Int.random(in: 5...30) * 60)
             samples.append(HKCategorySample(type: type, value: HKCategoryValue.notApplicable.rawValue, start: ts, end: ts.addingTimeInterval(duration)))
         }
@@ -651,8 +689,8 @@ class HealthSeeder: ObservableObject {
         var samples: [HKSample] = []
         let calendar = Calendar.current
         let flowType = HKCategoryType(.menstrualFlow)
-
         var currentDay = 0
+
         while currentDay < days {
             let cycleLength = Int.random(in: 26...32)
             let periodLength = Int.random(in: 3...6)
@@ -669,7 +707,6 @@ class HealthSeeder: ObservableObject {
                     metadata: [HKMetadataKeyMenstrualCycleStart: d == 0]
                 ))
             }
-
             currentDay += cycleLength
         }
 
@@ -690,14 +727,12 @@ class HealthSeeder: ObservableObject {
 
             for hour in stride(from: 8, to: 22, by: 2) {
                 let ts = dayStart.addingTimeInterval(Double(hour * 3600))
-                let q = HKQuantity(unit: dbUnit, doubleValue: randomBetween(45, 80))
-                samples.append(quantitySample(type: .environmentalAudioExposure, quantity: q, start: ts, end: ts.addingTimeInterval(7200)))
+                samples.append(quantitySample(type: .environmentalAudioExposure, quantity: HKQuantity(unit: dbUnit, doubleValue: randomBetween(45, 80)), start: ts, end: ts.addingTimeInterval(7200)))
             }
 
             if Bool.random() {
                 let ts = dayStart.addingTimeInterval(Double(Int.random(in: 10...20) * 3600))
-                let q = HKQuantity(unit: dbUnit, doubleValue: randomBetween(55, 85))
-                samples.append(quantitySample(type: .headphoneAudioExposure, quantity: q, start: ts, end: ts.addingTimeInterval(3600)))
+                samples.append(quantitySample(type: .headphoneAudioExposure, quantity: HKQuantity(unit: dbUnit, doubleValue: randomBetween(55, 85)), start: ts, end: ts.addingTimeInterval(3600)))
             }
         }
 
@@ -713,10 +748,9 @@ class HealthSeeder: ObservableObject {
 
         for dayOffset in 0..<days {
             let day = calendar.date(byAdding: .day, value: -dayOffset, to: Date())!
-            let ts = Calendar.current.date(bySettingHour: 6, minute: 30, second: 0, of: day)!
+            let ts = calendar.date(bySettingHour: 6, minute: 30, second: 0, of: day)!
 
-            let bbt = randomBetween(36.0, 37.0)
-            samples.append(HKQuantitySample(type: HKQuantityType(.basalBodyTemperature), quantity: HKQuantity(unit: .degreeCelsius(), doubleValue: bbt), start: ts, end: ts))
+            samples.append(HKQuantitySample(type: HKQuantityType(.basalBodyTemperature), quantity: HKQuantity(unit: .degreeCelsius(), doubleValue: randomBetween(36.0, 37.0)), start: ts, end: ts))
 
             if dayOffset % 3 == 0 {
                 let values: [HKCategoryValueCervicalMucusQuality] = [.dry, .sticky, .creamy, .watery, .eggWhite]
@@ -745,11 +779,10 @@ class HealthSeeder: ObservableObject {
 
         for dayOffset in 0..<days {
             let day = calendar.date(byAdding: .day, value: -dayOffset, to: Date())!
-            let ts = Calendar.current.date(bySettingHour: 8, minute: 0, second: 0, of: day)!
+            let ts = calendar.date(bySettingHour: 8, minute: 0, second: 0, of: day)!
 
             for (id, amount, unit) in vitamins {
-                let q = HKQuantity(unit: unit, doubleValue: amount * Double.random(in: 0.8...1.2))
-                samples.append(quantitySample(type: id, quantity: q, start: ts))
+                samples.append(quantitySample(type: id, quantity: HKQuantity(unit: unit, doubleValue: amount * Double.random(in: 0.8...1.2)), start: ts))
             }
         }
 
@@ -765,8 +798,7 @@ class HealthSeeder: ObservableObject {
 
         for monthOffset in 0..<12 {
             guard let day = calendar.date(byAdding: .month, value: -monthOffset, to: Date()) else { continue }
-            let ts = Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: day)!
-
+            let ts = calendar.date(bySettingHour: 9, minute: 0, second: 0, of: day)!
             samples.append(quantitySample(type: .bloodGlucose, quantity: HKQuantity(unit: HKUnit(from: "mg/dL"), doubleValue: randomBetween(80, 100)), start: ts))
             samples.append(quantitySample(type: .peripheralPerfusionIndex, quantity: HKQuantity(unit: .percent(), doubleValue: randomBetween(0.02, 0.20)), start: ts))
         }
@@ -785,7 +817,6 @@ class HealthSeeder: ObservableObject {
             let day = calendar.date(byAdding: .day, value: -dayOffset, to: Date())!
             let dayStart = calendar.startOfDay(for: day)
 
-            // Walking speed (m/s) — multiple readings during active hours
             for hour in [9, 11, 14, 17] {
                 let ts = dayStart.addingTimeInterval(Double(hour * 3600))
                 let end = ts.addingTimeInterval(600)
@@ -794,7 +825,6 @@ class HealthSeeder: ObservableObject {
                 samples.append(quantitySample(type: .walkingDoubleSupportPercentage, quantity: HKQuantity(unit: .percent(), doubleValue: randomBetween(0.20, 0.35)), start: ts, end: end))
             }
 
-            // Stair speeds a few times a week
             if dayOffset % 3 == 0 {
                 let ts = dayStart.addingTimeInterval(Double(Int.random(in: 8...18) * 3600))
                 let end = ts.addingTimeInterval(30)
@@ -807,9 +837,8 @@ class HealthSeeder: ObservableObject {
         return samples.count
     }
 
-    // MARK: - Wrist Temperature
-    // appleSleepingWristTemperature is written exclusively by Apple Watch firmware.
-    // Third-party apps cannot write to this type — returns 0 gracefully.
+    // MARK: - Wrist Temperature (system-only)
+
     func seedWristTemperature() async throws -> Int { return 0 }
 
     // MARK: - Daylight Exposure
@@ -822,20 +851,16 @@ class HealthSeeder: ObservableObject {
             let day = calendar.date(byAdding: .day, value: -dayOffset, to: Date())!
             let dayStart = calendar.startOfDay(for: day)
 
-            // Total daily daylight in minutes, aggregated in blocks
-            let totalMinutes = Int(randomBetween(20, 120))
-            // Split into 1-3 outdoor blocks during the day
             let blocks = Int.random(in: 1...3)
-            var remaining = totalMinutes
             let outdoorHours = [9, 12, 16, 18].shuffled().prefix(blocks)
+            var remaining = Int(randomBetween(20, 120))
 
             for hour in outdoorHours {
                 guard remaining > 0 else { break }
                 let blockMin = min(Int.random(in: 10...45), remaining)
                 let ts = dayStart.addingTimeInterval(Double(hour * 3600))
                 let end = ts.addingTimeInterval(Double(blockMin) * 60)
-                let q = HKQuantity(unit: .minute(), doubleValue: Double(blockMin))
-                samples.append(quantitySample(type: .timeInDaylight, quantity: q, start: ts, end: end))
+                samples.append(quantitySample(type: .timeInDaylight, quantity: HKQuantity(unit: .minute(), doubleValue: Double(blockMin)), start: ts, end: end))
                 remaining -= blockMin
             }
         }
