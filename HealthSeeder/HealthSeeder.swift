@@ -30,40 +30,52 @@ class HealthSeeder: ObservableObject {
     let store = HKHealthStore()
 
     @Published var categories: [SeedCategory] = [
-        SeedCategory(name: "Activity & Steps",          icon: "figure.walk"),
-        SeedCategory(name: "Heart Rate",                icon: "heart.fill"),
-        SeedCategory(name: "Sleep",                     icon: "moon.fill"),
-        SeedCategory(name: "Body Measurements",         icon: "scalemass.fill"),
-        SeedCategory(name: "Nutrition",                 icon: "fork.knife"),
-        SeedCategory(name: "Hydration",                 icon: "drop.fill"),
-        SeedCategory(name: "Workouts",                  icon: "dumbbell.fill"),
-        SeedCategory(name: "Blood Oxygen",              icon: "lungs.fill"),
-        SeedCategory(name: "Blood Glucose",             icon: "cross.vial.fill"),
-        SeedCategory(name: "Blood Pressure",            icon: "waveform.path.ecg"),
-        SeedCategory(name: "Body Temperature",          icon: "thermometer.medium"),
-        SeedCategory(name: "Respiration",               icon: "wind"),
-        SeedCategory(name: "Mindfulness",               icon: "brain.head.profile"),
-        SeedCategory(name: "Menstrual Cycle",           icon: "calendar.badge.clock"),
-        SeedCategory(name: "Hearing",                   icon: "ear.fill"),
-        SeedCategory(name: "Reproductive Health",       icon: "staroflife.fill"),
-        SeedCategory(name: "Vitamins & Supplements",    icon: "pills.fill"),
-        SeedCategory(name: "Lab Results",               icon: "testtube.2"),
-        SeedCategory(name: "Walking Metrics",           icon: "figure.walk.motion"),
-        SeedCategory(name: "Wrist Temp (system-only)",  icon: "thermometer.sun.fill"),
-        SeedCategory(name: "Daylight Exposure",         icon: "sun.max.fill"),
+        SeedCategory(name: "Activity & Steps",          icon: "figure.walk"),        // 0
+        SeedCategory(name: "Heart Rate",                icon: "heart.fill"),         // 1
+        SeedCategory(name: "Sleep",                     icon: "moon.fill"),          // 2
+        SeedCategory(name: "Body Measurements",         icon: "scalemass.fill"),     // 3
+        SeedCategory(name: "Nutrition",                 icon: "fork.knife"),         // 4
+        SeedCategory(name: "Hydration",                 icon: "drop.fill"),          // 5
+        SeedCategory(name: "Workouts",                  icon: "dumbbell.fill"),      // 6
+        SeedCategory(name: "Blood Oxygen",              icon: "lungs.fill"),         // 7
+        SeedCategory(name: "Blood Glucose",             icon: "cross.vial.fill"),    // 8
+        SeedCategory(name: "Blood Pressure",            icon: "waveform.path.ecg"),  // 9
+        SeedCategory(name: "Body Temperature",          icon: "thermometer.medium"), // 10
+        SeedCategory(name: "Respiration",               icon: "wind"),               // 11
+        SeedCategory(name: "Mindfulness",               icon: "brain.head.profile"), // 12
+        SeedCategory(name: "Menstrual Cycle",           icon: "calendar.badge.clock"),// 13
+        SeedCategory(name: "Hearing",                   icon: "ear.fill"),           // 14
+        SeedCategory(name: "Reproductive Health",       icon: "staroflife.fill"),    // 15
+        SeedCategory(name: "Lab Results",               icon: "testtube.2"),         // 16
+        SeedCategory(name: "Walking Metrics",           icon: "figure.walk.motion"), // 17
+        SeedCategory(name: "Wrist Temp (system-only)",  icon: "thermometer.sun.fill"),// 18
+        SeedCategory(name: "Daylight Exposure",         icon: "sun.max.fill"),       // 19
     ]
 
     @Published var isRunning = false
     @Published var isComplete = false
     @Published var isDeleting = false
+    @Published var isCheckingAuth = false
     @Published var overallProgress: Double = 0
     @Published var authError: String? = nil
     @Published var deleteResult: DeleteResult? = nil
+    @Published var authStatusSummary: AuthStatusSummary? = nil
+    @Published var showResetInstructions = false
     @Published var days: Int = 365
+    var todayOnly: Bool { days == 1 }
 
     enum DeleteResult {
         case success(Int)
         case failure(String)
+    }
+
+    struct AuthStatusSummary {
+        let authorized: Int
+        let denied: Int
+        let notDetermined: Int
+        let total: Int
+        var denied_names: [String]
+        var notDetermined_names: [String]
     }
 
     // MARK: - All writable types (flat list reused for auth + delete)
@@ -73,10 +85,25 @@ class HealthSeeder: ObservableObject {
             .stepCount, .distanceWalkingRunning, .activeEnergyBurned, .basalEnergyBurned, .flightsClimbed,
             .heartRate, .restingHeartRate, .heartRateVariabilitySDNN, .vo2Max,
             .bodyMass, .bodyMassIndex, .bodyFatPercentage, .leanBodyMass, .height, .waistCircumference,
+            // Macros
             .dietaryEnergyConsumed, .dietaryProtein, .dietaryCarbohydrates, .dietaryFatTotal,
-            .dietaryFiber, .dietaryWater, .dietarySodium, .dietarySugar, .dietaryCholesterol,
-            .dietaryVitaminC, .dietaryVitaminD, .dietaryCalcium, .dietaryIron, .dietaryMagnesium,
-            .dietaryZinc, .dietaryPotassium, .dietaryVitaminB12, .dietaryFolate,
+            .dietaryFatSaturated, .dietaryFatMonounsaturated, .dietaryFatPolyunsaturated,
+            .dietaryFiber, .dietarySugar, .dietaryCholesterol,
+            // Hydration
+            .dietaryWater, .dietarySodium, .dietaryPotassium, .dietaryChloride,
+            // Fat-soluble vitamins
+            .dietaryVitaminA, .dietaryVitaminD, .dietaryVitaminE, .dietaryVitaminK,
+            // Water-soluble vitamins
+            .dietaryVitaminC, .dietaryVitaminB6, .dietaryVitaminB12,
+            .dietaryThiamin, .dietaryRiboflavin, .dietaryNiacin,
+            .dietaryPantothenicAcid, .dietaryBiotin, .dietaryFolate,
+            // Minerals
+            .dietaryCalcium, .dietaryIron, .dietaryMagnesium, .dietaryZinc,
+            .dietaryPhosphorus, .dietaryCopper, .dietaryManganese,
+            .dietarySelenium, .dietaryIodine, .dietaryChromium, .dietaryMolybdenum,
+            // Caffeine
+            .dietaryCaffeine,
+            // Vitals
             .oxygenSaturation, .bloodGlucose, .bloodPressureSystolic, .bloodPressureDiastolic,
             .bodyTemperature, .respiratoryRate, .peripheralPerfusionIndex,
             .environmentalAudioExposure, .headphoneAudioExposure,
@@ -102,18 +129,24 @@ class HealthSeeder: ObservableObject {
     // MARK: - Auth
 
     func requestAuth() async {
+        // Request write-only authorization in small batches with a delay between each
+        // to prevent the HealthKit permission dialog from overlapping itself.
         let allTypes = Array(allTypesToWrite)
-        let batchSize = 15
+        let batchSize = 8
         var index = 0
         while index < allTypes.count {
             let batch = Set(allTypes[index..<min(index + batchSize, allTypes.count)])
             do {
-                try await store.requestAuthorization(toShare: batch, read: batch)
+                try await store.requestAuthorization(toShare: batch, read: [])
             } catch {
                 authError = error.localizedDescription
                 return
             }
             index += batchSize
+            // Give the system time to fully dismiss the previous dialog before showing the next
+            if index < allTypes.count {
+                try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5s
+            }
         }
     }
 
@@ -159,13 +192,70 @@ class HealthSeeder: ObservableObject {
         case 13: return try await seedMenstrualCycle()
         case 14: return try await seedHearing()
         case 15: return try await seedReproductiveData()
-        case 16: return try await seedVitamins()
-        case 17: return try await seedLaboratory()
-        case 18: return try await seedWalkingMetrics()
-        case 19: return try await seedWristTemperature()
-        case 20: return try await seedDaylight()
+        case 16: return try await seedLaboratory()
+        case 17: return try await seedWalkingMetrics()
+        case 18: return try await seedWristTemperature()
+        case 19: return try await seedDaylight()
         default: return 0
         }
+    }
+
+    func checkAuthStatus() async {
+        isCheckingAuth = true
+        var authorized = 0
+        var denied = 0
+        var notDetermined = 0
+        var deniedNames: [String] = []
+        var notDeterminedNames: [String] = []
+
+        for id in allQuantityTypes {
+            guard let type = HKQuantityType.quantityType(forIdentifier: id) else { continue }
+            switch store.authorizationStatus(for: type) {
+            case .sharingAuthorized:
+                authorized += 1
+            case .sharingDenied:
+                denied += 1
+                deniedNames.append(id.rawValue.replacingOccurrences(of: "HKQuantityTypeIdentifier", with: ""))
+            case .notDetermined:
+                notDetermined += 1
+                notDeterminedNames.append(id.rawValue.replacingOccurrences(of: "HKQuantityTypeIdentifier", with: ""))
+            @unknown default:
+                notDetermined += 1
+            }
+        }
+
+        for id in allCategoryTypeIdentifiers {
+            let type = HKCategoryType(id)
+            switch store.authorizationStatus(for: type) {
+            case .sharingAuthorized:
+                authorized += 1
+            case .sharingDenied:
+                denied += 1
+                deniedNames.append(id.rawValue.replacingOccurrences(of: "HKCategoryTypeIdentifier", with: ""))
+            case .notDetermined:
+                notDetermined += 1
+                notDeterminedNames.append(id.rawValue.replacingOccurrences(of: "HKCategoryTypeIdentifier", with: ""))
+            @unknown default:
+                notDetermined += 1
+            }
+        }
+
+        let workoutStatus = store.authorizationStatus(for: HKWorkoutType.workoutType())
+        switch workoutStatus {
+        case .sharingAuthorized: authorized += 1
+        case .sharingDenied: denied += 1; deniedNames.append("Workout")
+        default: notDetermined += 1; notDeterminedNames.append("Workout")
+        }
+
+        authStatusSummary = AuthStatusSummary(
+            authorized: authorized,
+            denied: denied,
+            notDetermined: notDetermined,
+            total: authorized + denied + notDetermined,
+            denied_names: deniedNames,
+            notDetermined_names: notDeterminedNames
+        )
+        isCheckingAuth = false
     }
 
     // MARK: - Delete All Seeded Data
@@ -174,12 +264,10 @@ class HealthSeeder: ObservableObject {
         isDeleting = true
         deleteResult = nil
 
-        let bundleID = Bundle.main.bundleIdentifier ?? ""
-        let predicate = HKQuery.predicateForObjects(from: HKSource.default())
-        let start = Date.distantPast
-        let end = Date()
-        let timePredicate = HKQuery.predicateForSamples(withStart: start, end: end)
-        let combined = NSCompoundPredicate(andPredicateWithSubpredicates: [predicate, timePredicate])
+        // deleteObjects(of:predicate:) is the most reliable delete API —
+        // it operates server-side in HealthKit and only removes samples
+        // that the calling app wrote, with no fetch step required.
+        let predicate = HKQuery.predicateForSamples(withStart: Date.distantPast, end: Date())
 
         var totalDeleted = 0
         var firstError: String? = nil
@@ -188,11 +276,8 @@ class HealthSeeder: ObservableObject {
         for id in allQuantityTypes {
             guard let type = HKQuantityType.quantityType(forIdentifier: id) else { continue }
             do {
-                let samples = try await fetchSamples(type: type, predicate: combined)
-                if !samples.isEmpty {
-                    try await store.delete(samples)
-                    totalDeleted += samples.count
-                }
+                let count = try await store.deleteObjects(of: type, predicate: predicate)
+                totalDeleted += count
             } catch {
                 if firstError == nil { firstError = error.localizedDescription }
             }
@@ -202,11 +287,8 @@ class HealthSeeder: ObservableObject {
         for id in allCategoryTypeIdentifiers {
             let type = HKCategoryType(id)
             do {
-                let samples = try await fetchSamples(type: type, predicate: combined)
-                if !samples.isEmpty {
-                    try await store.delete(samples)
-                    totalDeleted += samples.count
-                }
+                let count = try await store.deleteObjects(of: type, predicate: predicate)
+                totalDeleted += count
             } catch {
                 if firstError == nil { firstError = error.localizedDescription }
             }
@@ -214,11 +296,16 @@ class HealthSeeder: ObservableObject {
 
         // Delete workouts
         do {
-            let workouts = try await fetchSamples(type: HKWorkoutType.workoutType(), predicate: combined)
-            if !workouts.isEmpty {
-                try await store.delete(workouts)
-                totalDeleted += workouts.count
-            }
+            let count = try await store.deleteObjects(of: HKWorkoutType.workoutType(), predicate: predicate)
+            totalDeleted += count
+        } catch {
+            if firstError == nil { firstError = error.localizedDescription }
+        }
+
+        // Delete blood pressure correlations
+        do {
+            let count = try await store.deleteObjects(of: HKCorrelationType(.bloodPressure), predicate: predicate)
+            totalDeleted += count
         } catch {
             if firstError == nil { firstError = error.localizedDescription }
         }
@@ -229,30 +316,11 @@ class HealthSeeder: ObservableObject {
             deleteResult = .failure(err)
         } else {
             deleteResult = .success(totalDeleted)
-            // Reset category statuses
             for i in categories.indices {
                 categories[i].status = .pending
                 categories[i].count = 0
             }
             isComplete = false
-        }
-    }
-
-    private func fetchSamples(type: HKSampleType, predicate: NSPredicate) async throws -> [HKSample] {
-        try await withCheckedThrowingContinuation { continuation in
-            let query = HKSampleQuery(
-                sampleType: type,
-                predicate: predicate,
-                limit: HKObjectQueryNoLimit,
-                sortDescriptors: nil
-            ) { _, samples, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else {
-                    continuation.resume(returning: samples ?? [])
-                }
-            }
-            store.execute(query)
         }
     }
 
@@ -462,6 +530,8 @@ class HealthSeeder: ObservableObject {
     }
 
     // MARK: - Nutrition
+    // Single daily entry with ALL nutritional types at realistic DRI-aligned values.
+    // No separate vitamins category to avoid double-counting.
 
     func seedNutrition() async throws -> Int {
         var samples: [HKSample] = []
@@ -470,27 +540,55 @@ class HealthSeeder: ObservableObject {
         for dayOffset in 0..<days {
             let day = calendar.date(byAdding: .day, value: -dayOffset, to: Date())!
             let dayStart = calendar.startOfDay(for: day)
-            let mealStart = dayStart.addingTimeInterval(43200)
-            let mealEnd = dayStart.addingTimeInterval(75600)
+            let mealStart = dayStart.addingTimeInterval(28800)  // 8am
+            let mealEnd   = dayStart.addingTimeInterval(72000)  // 8pm
 
             let nutrition: [(HKQuantityTypeIdentifier, Double, HKUnit)] = [
-                (.dietaryEnergyConsumed, randomBetween(1600, 2800), .kilocalorie()),
-                (.dietaryProtein, randomBetween(60, 180), .gram()),
-                (.dietaryCarbohydrates, randomBetween(150, 350), .gram()),
-                (.dietaryFatTotal, randomBetween(40, 100), .gram()),
-                (.dietaryFiber, randomBetween(10, 40), .gram()),
-                (.dietarySodium, randomBetween(1000, 3000), .gramUnit(with: .milli)),
-                (.dietarySugar, randomBetween(20, 80), .gram()),
-                (.dietaryCholesterol, randomBetween(100, 300), .gramUnit(with: .milli)),
-                (.dietaryVitaminC, randomBetween(50, 200), .gramUnit(with: .milli)),
-                (.dietaryVitaminD, randomBetween(200, 1000), .gramUnit(with: .micro)),
-                (.dietaryCalcium, randomBetween(500, 1300), .gramUnit(with: .milli)),
-                (.dietaryIron, randomBetween(8, 18), .gramUnit(with: .milli)),
-                (.dietaryMagnesium, randomBetween(200, 420), .gramUnit(with: .milli)),
-                (.dietaryZinc, randomBetween(5, 15), .gramUnit(with: .milli)),
-                (.dietaryPotassium, randomBetween(2000, 4700), .gramUnit(with: .milli)),
-                (.dietaryVitaminB12, randomBetween(1, 6), .gramUnit(with: .micro)),
-                (.dietaryFolate, randomBetween(200, 600), .gramUnit(with: .micro)),
+                // Macros
+                (.dietaryEnergyConsumed,         randomBetween(1800, 2400), .kilocalorie()),
+                (.dietaryProtein,                randomBetween(50, 100),    .gram()),
+                (.dietaryCarbohydrates,          randomBetween(200, 300),   .gram()),
+                (.dietaryFatTotal,               randomBetween(50, 80),     .gram()),
+                (.dietaryFatSaturated,           randomBetween(10, 22),     .gram()),
+                (.dietaryFatMonounsaturated,     randomBetween(15, 30),     .gram()),
+                (.dietaryFatPolyunsaturated,     randomBetween(8, 20),      .gram()),
+                (.dietaryFiber,                  randomBetween(20, 35),     .gram()),
+                (.dietarySugar,                  randomBetween(25, 50),     .gram()),
+                (.dietaryCholesterol,            randomBetween(150, 300),   .gramUnit(with: .milli)),
+                // Fluids & electrolytes
+                (.dietaryWater,                  randomBetween(1500, 2500), .literUnit(with: .milli)),
+                (.dietarySodium,                 randomBetween(1200, 2300), .gramUnit(with: .milli)),
+                (.dietaryPotassium,              randomBetween(2600, 3500), .gramUnit(with: .milli)),
+                (.dietaryChloride,               randomBetween(1800, 2300), .gramUnit(with: .milli)),
+                // Fat-soluble vitamins
+                (.dietaryVitaminA,               randomBetween(600, 900),   .gramUnit(with: .micro)),
+                (.dietaryVitaminD,               randomBetween(10, 20),     .gramUnit(with: .micro)),
+                (.dietaryVitaminE,               randomBetween(12, 15),     .gramUnit(with: .milli)),
+                (.dietaryVitaminK,               randomBetween(80, 120),    .gramUnit(with: .micro)),
+                // Water-soluble vitamins
+                (.dietaryVitaminC,               randomBetween(65, 90),     .gramUnit(with: .milli)),
+                (.dietaryVitaminB6,              randomBetween(1.0, 1.7),   .gramUnit(with: .milli)),
+                (.dietaryVitaminB12,             randomBetween(1.8, 2.4),   .gramUnit(with: .micro)),
+                (.dietaryThiamin,                randomBetween(1.0, 1.2),   .gramUnit(with: .milli)),
+                (.dietaryRiboflavin,             randomBetween(1.0, 1.3),   .gramUnit(with: .milli)),
+                (.dietaryNiacin,                 randomBetween(12, 16),     .gramUnit(with: .milli)),
+                (.dietaryPantothenicAcid,        randomBetween(4, 5),       .gramUnit(with: .milli)),
+                (.dietaryBiotin,                 randomBetween(25, 30),     .gramUnit(with: .micro)),
+                (.dietaryFolate,                 randomBetween(320, 400),   .gramUnit(with: .micro)),
+                // Minerals
+                (.dietaryCalcium,                randomBetween(900, 1200),  .gramUnit(with: .milli)),
+                (.dietaryIron,                   randomBetween(10, 18),     .gramUnit(with: .milli)),
+                (.dietaryMagnesium,              randomBetween(280, 420),   .gramUnit(with: .milli)),
+                (.dietaryZinc,                   randomBetween(7, 11),      .gramUnit(with: .milli)),
+                (.dietaryPhosphorus,             randomBetween(600, 700),   .gramUnit(with: .milli)),
+                (.dietaryCopper,                 randomBetween(700, 900),   .gramUnit(with: .micro)),
+                (.dietaryManganese,              randomBetween(1.8, 2.3),   .gramUnit(with: .milli)),
+                (.dietarySelenium,               randomBetween(45, 55),     .gramUnit(with: .micro)),
+                (.dietaryIodine,                 randomBetween(120, 150),   .gramUnit(with: .micro)),
+                (.dietaryChromium,               randomBetween(25, 35),     .gramUnit(with: .micro)),
+                (.dietaryMolybdenum,             randomBetween(35, 45),     .gramUnit(with: .micro)),
+                // Caffeine
+                (.dietaryCaffeine,               randomBetween(80, 300),    .gramUnit(with: .milli)),
             ]
 
             for (id, value, unit) in nutrition {
@@ -607,26 +705,44 @@ class HealthSeeder: ObservableObject {
     }
 
     // MARK: - Blood Pressure
+    // Blood pressure must be saved as an HKCorrelation containing both systolic and diastolic.
+    // Saving them as separate HKQuantitySamples triggers the "did not pass in both types" warning.
 
     func seedBloodPressure() async throws -> Int {
-        var samples: [HKSample] = []
+        var correlations: [HKSample] = []
         let calendar = Calendar.current
         let mmHg = HKUnit.millimeterOfMercury()
+        let correlationType = HKCorrelationType(.bloodPressure)
 
         for dayOffset in 0..<days {
             let day = calendar.date(byAdding: .day, value: -dayOffset, to: Date())!
 
             for hour in [7, 13, 19] {
                 let ts = calendar.date(bySettingHour: hour, minute: Int.random(in: 0...30), second: 0, of: day)!
-                let systolic = HKQuantitySample(type: HKQuantityType(.bloodPressureSystolic), quantity: HKQuantity(unit: mmHg, doubleValue: randomBetween(110, 135)), start: ts, end: ts)
-                let diastolic = HKQuantitySample(type: HKQuantityType(.bloodPressureDiastolic), quantity: HKQuantity(unit: mmHg, doubleValue: randomBetween(65, 85)), start: ts, end: ts)
-                // HealthKit requires both pressure types saved together in the same call
-                try await store.save([systolic, diastolic])
-                samples.append(contentsOf: [systolic, diastolic])
+
+                let systolic = HKQuantitySample(
+                    type: HKQuantityType(.bloodPressureSystolic),
+                    quantity: HKQuantity(unit: mmHg, doubleValue: randomBetween(110, 135)),
+                    start: ts, end: ts
+                )
+                let diastolic = HKQuantitySample(
+                    type: HKQuantityType(.bloodPressureDiastolic),
+                    quantity: HKQuantity(unit: mmHg, doubleValue: randomBetween(65, 85)),
+                    start: ts, end: ts
+                )
+
+                let correlation = HKCorrelation(
+                    type: correlationType,
+                    start: ts,
+                    end: ts,
+                    objects: [systolic, diastolic]
+                )
+                correlations.append(correlation)
             }
         }
 
-        return samples.count
+        try await save(correlations)
+        return correlations.count
     }
 
     // MARK: - Body Temperature
@@ -755,34 +871,6 @@ class HealthSeeder: ObservableObject {
             if dayOffset % 3 == 0 {
                 let values: [HKCategoryValueCervicalMucusQuality] = [.dry, .sticky, .creamy, .watery, .eggWhite]
                 samples.append(HKCategorySample(type: HKCategoryType(.cervicalMucusQuality), value: values.randomElement()!.rawValue, start: ts, end: ts.addingTimeInterval(86400)))
-            }
-        }
-
-        try await save(samples)
-        return samples.count
-    }
-
-    // MARK: - Vitamins & Supplements
-
-    func seedVitamins() async throws -> Int {
-        var samples: [HKSample] = []
-        let calendar = Calendar.current
-
-        let vitamins: [(HKQuantityTypeIdentifier, Double, HKUnit)] = [
-            (.dietaryVitaminC, 1000, .gramUnit(with: .milli)),
-            (.dietaryVitaminD, 2000, .gramUnit(with: .micro)),
-            (.dietaryVitaminB12, 1000, .gramUnit(with: .micro)),
-            (.dietaryMagnesium, 400, .gramUnit(with: .milli)),
-            (.dietaryZinc, 15, .gramUnit(with: .milli)),
-            (.dietaryFolate, 400, .gramUnit(with: .micro)),
-        ]
-
-        for dayOffset in 0..<days {
-            let day = calendar.date(byAdding: .day, value: -dayOffset, to: Date())!
-            let ts = calendar.date(bySettingHour: 8, minute: 0, second: 0, of: day)!
-
-            for (id, amount, unit) in vitamins {
-                samples.append(quantitySample(type: id, quantity: HKQuantity(unit: unit, doubleValue: amount * Double.random(in: 0.8...1.2)), start: ts))
             }
         }
 
