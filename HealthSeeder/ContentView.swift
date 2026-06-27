@@ -3,6 +3,8 @@ import SwiftUI
 struct ContentView: View {
     @StateObject private var seeder = HealthSeeder()
     @State private var showDeleteConfirmation = false
+    @State private var showAuthStatus = false
+    @State private var showResetInstructions = false
 
     var body: some View {
         NavigationStack {
@@ -38,6 +40,19 @@ struct ContentView: View {
         } message: {
             Text(deleteResultMessage)
         }
+        .sheet(isPresented: $showAuthStatus) {
+            if let summary = seeder.authStatusSummary {
+                AuthStatusView(summary: summary) {
+                    showAuthStatus = false
+                } requestAuth: {
+                    showAuthStatus = false
+                    Task { await seeder.requestAuth() }
+                }
+            }
+        }
+        .sheet(isPresented: $showResetInstructions) {
+            NuclearResetView { showResetInstructions = false }
+        }
     }
 
     // MARK: - Delete alert helpers
@@ -65,7 +80,10 @@ struct ContentView: View {
             HStack(alignment: .top) {
                 Image(systemName: "heart.fill")
                     .foregroundStyle(.red)
-                Text("Injects realistic data into the Simulator's Apple Health for the last \(seeder.days) days.")
+                Text(seeder.todayOnly
+                    ? "Injects realistic data into the Simulator's Apple Health for today only."
+                    : "Injects realistic data into the Simulator's Apple Health for the last \(seeder.days) days."
+                )
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -76,13 +94,15 @@ struct ContentView: View {
                 Text("Period:")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+                Spacer()
                 Picker("Days", selection: $seeder.days) {
+                    Text("Today only").tag(1)
                     Text("30 days").tag(30)
                     Text("90 days").tag(90)
                     Text("180 days").tag(180)
                     Text("365 days").tag(365)
                 }
-                .pickerStyle(.segmented)
+                .pickerStyle(.menu)
                 .disabled(seeder.isRunning || seeder.isDeleting)
             }
             .padding(.horizontal)
@@ -195,6 +215,39 @@ struct ContentView: View {
             .tint(.red)
             .disabled(seeder.isRunning || seeder.isDeleting)
             .controlSize(.large)
+
+            Button {
+                Task {
+                    await seeder.checkAuthStatus()
+                    showAuthStatus = true
+                }
+            } label: {
+                if seeder.isCheckingAuth {
+                    HStack(spacing: 8) {
+                        ProgressView().tint(.blue)
+                        Text("Checking...")
+                    }
+                    .frame(maxWidth: .infinity)
+                } else {
+                    Label("Check Permissions", systemImage: "lock.shield")
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            .buttonStyle(.bordered)
+            .tint(.blue)
+            .disabled(seeder.isRunning || seeder.isDeleting || seeder.isCheckingAuth)
+            .controlSize(.large)
+
+            Button {
+                showResetInstructions = true
+            } label: {
+                Label("Full Health Reset (Simulator)", systemImage: "exclamationmark.triangle")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .tint(.orange)
+            .disabled(seeder.isRunning || seeder.isDeleting)
+            .controlSize(.large)
         }
         .padding()
         .background(Color(.systemGroupedBackground))
@@ -223,6 +276,158 @@ struct ContentView: View {
         case .failed:
             Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
         }
+    }
+}
+
+// MARK: - Auth Status Sheet
+
+struct AuthStatusView: View {
+    let summary: HealthSeeder.AuthStatusSummary
+    let dismiss: () -> Void
+    let requestAuth: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    HStack {
+                        Label("\(summary.authorized) authorized", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                        Spacer()
+                        Text("of \(summary.total)")
+                            .foregroundStyle(.secondary)
+                            .font(.caption)
+                    }
+                    if summary.denied > 0 {
+                        Label("\(summary.denied) denied", systemImage: "xmark.circle.fill")
+                            .foregroundStyle(.red)
+                    }
+                    if summary.notDetermined > 0 {
+                        Label("\(summary.notDetermined) not determined", systemImage: "questionmark.circle.fill")
+                            .foregroundStyle(.orange)
+                    }
+                } header: {
+                    Text("Summary")
+                }
+
+                if !summary.denied_names.isEmpty {
+                    Section("Denied") {
+                        ForEach(summary.denied_names, id: \.self) { name in
+                            HStack {
+                                Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
+                                Text(name).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+
+                if !summary.notDetermined_names.isEmpty {
+                    Section("Not Determined") {
+                        ForEach(summary.notDetermined_names, id: \.self) { name in
+                            HStack {
+                                Image(systemName: "questionmark.circle.fill").foregroundStyle(.orange)
+                                Text(name).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+
+                if summary.denied > 0 || summary.notDetermined > 0 {
+                    Section {
+                        Button {
+                            requestAuth()
+                        } label: {
+                            Label("Request Missing Permissions", systemImage: "lock.shield")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.blue)
+
+                        Text("If permissions remain denied after requesting, go to the Simulator's Settings app > Privacy & Security > Health > HealthSeeder and enable each type manually.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .listStyle(.insetGrouped)
+            .navigationTitle("Authorization Status")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Nuclear Reset Instructions
+
+struct NuclearResetView: View {
+    let dismiss: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Text("The only way to fully wipe all Apple Health data in the Simulator — including data from other sources — is to erase the entire Simulator. This takes about 10 seconds and only affects this Simulator device.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .padding(.vertical, 4)
+                } header: {
+                    Label("Why this is needed", systemImage: "info.circle")
+                }
+
+                Section("Option 1 — Simulator menu (fastest)") {
+                    step(number: "1", text: "Bring the Simulator window to focus")
+                    step(number: "2", text: "In the menu bar: Device > Erase All Content and Settings…")
+                    step(number: "3", text: "Confirm in the dialog")
+                    step(number: "4", text: "Wait for the Simulator to reboot, then re-run HealthSeeder from Xcode")
+                }
+
+                Section("Option 2 — Terminal") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Run this command to erase the currently booted Simulator:")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text("xcrun simctl erase booted")
+                            .font(.system(.caption, design: .monospaced))
+                            .padding(8)
+                            .background(Color(.secondarySystemGroupedBackground))
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                Section {
+                    Label("The \"Delete All Seeded Data\" button removes only samples written by HealthSeeder. Data injected by the Simulator itself (default weight, height, etc.) cannot be deleted by any third-party app.", systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+            }
+            .listStyle(.insetGrouped)
+            .navigationTitle("Full Health Reset")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func step(number: String, text: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text(number)
+                .font(.caption.bold())
+                .foregroundStyle(.white)
+                .frame(width: 20, height: 20)
+                .background(Color.orange)
+                .clipShape(Circle())
+            Text(text)
+                .font(.subheadline)
+        }
+        .padding(.vertical, 2)
     }
 }
 
