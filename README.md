@@ -19,13 +19,13 @@ Steps with a realistic hourly distribution, walking distance, active calories, b
 Hourly readings with day/night variation (lower during sleep), resting heart rate, heart rate variability (HRV), VO2 Max (weekly).
 
 ### Sleep
-Deep, REM, Core, and Awake stages in sequential non-overlapping blocks following a realistic 90-minute cycle pattern.
+Deep, REM, Core, and Awake stages in sequential non-overlapping blocks following a realistic 90-minute cycle pattern. Bedtime is always anchored to the previous calendar night so data never extends into future days.
 
 ### Body Measurements
 Weight with daily drift, BMI, body fat %, lean mass, waist circumference, height.
 
 ### Nutrition
-A single consolidated daily entry covering all 39 HealthKit nutritional types at DRI-aligned values:
+A single consolidated daily entry covering all 39 supported HealthKit nutritional types at DRI-aligned values, eliminating double-counting:
 
 **Macros:** energy, protein, carbohydrates, total fat, saturated fat, monounsaturated fat, polyunsaturated fat, fibre, sugar, cholesterol.
 
@@ -39,8 +39,10 @@ A single consolidated daily entry covering all 39 HealthKit nutritional types at
 
 **Other:** caffeine.
 
+> `dietaryCholine` has no standalone `HKQuantityTypeIdentifier` in HealthKit and is not included.
+
 ### Hydration
-Water intake logged separately in 8 daily windows (complements the nutrition entry).
+Water intake logged in 8 daily windows (separate from the nutrition entry).
 
 ### Workouts
 Running, cycling, walking, swimming, strength training, yoga, HIIT, elliptical, rowing — on alternating days with realistic duration and calorie data.
@@ -52,7 +54,7 @@ Running, cycling, walking, swimming, strength training, yoga, HIIT, elliptical, 
 Fasting and post-meal readings (6 per day).
 
 ### Blood Pressure
-Systolic and diastolic saved as `HKCorrelation`, 3 times per day.
+Systolic and diastolic saved as `HKCorrelation(.bloodPressure)`, 3 times per day.
 
 ### Body Temperature
 One morning reading per day.
@@ -81,24 +83,37 @@ Walking speed, step length, double support percentage (4 readings per day), stai
 ### Daylight Exposure
 Daily outdoor time split across 1–3 blocks.
 
+### State of Mind *(iOS 18+ only)*
+Random valence data across all available labels and associations. Generates 1–3 `.momentaryEmotion` records per day plus one end-of-day record, useful for testing correlation analysis features.
+
+**Important:** State of Mind is **never seeded for today or yesterday**, regardless of the period selected. This prevents partial-day data from skewing correlations in apps that analyse mood patterns.
+
+Available labels: amazed, amused, angry, anxious, calm, content, disappointed, discouraged, drained, excited, frustrated, grateful, happy, hopeful, indifferent, irritated, joyful, lonely, overwhelmed, peaceful, proud, relieved, sad, satisfied, stressed, surprised, worried.
+
+Available associations: community, currentEvents, education, family, fitness, friends, health, hobbies, identity, money, partner, selfCare, tasks, travel, work.
+
 ---
 
 ## System-only types (not injectable)
 
-The following types are generated exclusively by Apple Watch firmware. HealthSeeder lists them in the UI but skips them gracefully — no error is thrown:
+The following types are generated exclusively by Apple Watch firmware or computed internally by the OS. HealthSeeder lists the Wrist Temp category in the UI but skips it gracefully. No third-party app can write to these types, even on a real device with a paired Apple Watch:
 
-- `appleExerciseTime`
-- `appleStandHour`
-- `walkingHeartRateAverage`
-- `walkingAsymmetryPercentage`
-- `appleSleepingWristTemperature`
+| Type | Maps to |
+|---|---|
+| `appleExerciseTime` | Exercise ring |
+| `appleStandHour` / `appleStandTime` | Stand ring |
+| `appleMoveTime` | Move ring |
+| `walkingHeartRateAverage` | Walking HR card |
+| `walkingAsymmetryPercentage` | Mobility card |
+| `appleWalkingSteadiness` | Mobility card |
+| `appleSleepingWristTemperature` | Wrist Temp card |
 
 ---
 
 ## Requirements
 
 - Xcode 15 or later
-- iOS 16 deployment target or later
+- iOS 16 deployment target or later (iOS 18 required for State of Mind)
 - Swift 5.9 or later
 - Xcode Simulator (iPhone or iPad)
 
@@ -147,7 +162,7 @@ Open the **Health** app on the same Simulator to confirm data is present before 
 
 ## Deleting seeded data
 
-Tap **Delete All Seeded Data** in the app. This uses `HKHealthStore.deleteObjects(of:predicate:)` to remove only the samples written by HealthSeeder across all types.
+Tap **Delete All Seeded Data** in the app. This uses `HKHealthStore.deleteObjects(of:predicate:)` to remove only the samples written by HealthSeeder across all types. The predicate extends slightly into the future to ensure same-day samples are not missed.
 
 > **Note:** Some data injected by the Simulator itself (such as default weight or height entries) cannot be removed by any third-party app. To wipe Apple Health completely, use **Device > Erase All Content and Settings** in the Simulator menu, or run `xcrun simctl erase booted` in Terminal. The app includes a **Full Health Reset** button with step-by-step instructions for both methods.
 
@@ -164,7 +179,8 @@ Tap **Check Permissions** to see a breakdown of which HealthKit types are author
 - Simulator only. HealthKit on a real device requires a physical Apple Watch for several metric types and behaves differently for authorisation.
 - Data is randomised on each run, so exact values will differ between sessions.
 - Running the seeder multiple times without deleting first will create duplicate samples.
-- `dietaryCholine` has no standalone `HKQuantityTypeIdentifier` in HealthKit and is therefore not included — Apple only supports it inside `HKCorrelation` food entries.
+- State of Mind requires iOS 18 or later and is silently skipped on earlier versions.
+- The Exercise, Stand, Move, Walking HR, Mobility, and Wrist Temp cards cannot be populated by any third-party app — they are exclusively written by Apple Watch firmware.
 
 ---
 
