@@ -50,6 +50,7 @@ class HealthSeeder: ObservableObject {
         SeedCategory(name: "Walking Metrics",           icon: "figure.walk.motion"), // 17
         SeedCategory(name: "Wrist Temp (system-only)",  icon: "thermometer.sun.fill"),// 18
         SeedCategory(name: "Daylight Exposure",         icon: "sun.max.fill"),       // 19
+        SeedCategory(name: "State of Mind",             icon: "face.smiling"),       // 20
     ]
 
     @Published var isRunning = false
@@ -196,6 +197,7 @@ class HealthSeeder: ObservableObject {
         case 17: return try await seedWalkingMetrics()
         case 18: return try await seedWristTemperature()
         case 19: return try await seedDaylight()
+        case 20: return try await seedStateOfMind()
         default: return 0
         }
     }
@@ -267,7 +269,10 @@ class HealthSeeder: ObservableObject {
         // deleteObjects(of:predicate:) is the most reliable delete API —
         // it operates server-side in HealthKit and only removes samples
         // that the calling app wrote, with no fetch step required.
-        let predicate = HKQuery.predicateForSamples(withStart: Date.distantPast, end: Date())
+        // End date extends slightly into the future so samples created
+        // moments ago today (with end timestamps very close to "now") are not excluded.
+        let futureEnd = Date().addingTimeInterval(86400)
+        let predicate = HKQuery.predicateForSamples(withStart: Date.distantPast, end: futureEnd, options: .strictStartDate)
 
         var totalDeleted = 0
         var firstError: String? = nil
@@ -423,12 +428,15 @@ class HealthSeeder: ObservableObject {
         let sleepType = HKCategoryType(.sleepAnalysis)
 
         for dayOffset in 0..<days {
-            let day = calendar.date(byAdding: .day, value: -dayOffset, to: Date())!
+            // `day` represents the night that ENDS on this calendar day (wake-up day).
+            // Bedtime is therefore on the PREVIOUS calendar day, never extending past `day` itself.
+            // This guarantees sleep data never bleeds into a future, not-yet-seeded day.
+            let wakeDay = calendar.date(byAdding: .day, value: -dayOffset, to: Date())!
+            let previousNight = calendar.date(byAdding: .day, value: -1, to: wakeDay)!
 
-            // Bedtime on the previous calendar day (e.g. night of day N starts on day N)
             let bedtimeHour = Int.random(in: 22...23)
             let bedtimeMinute = Int.random(in: 0...59)
-            guard let bedtime = calendar.date(bySettingHour: bedtimeHour, minute: bedtimeMinute, second: 0, of: day) else { continue }
+            guard let bedtime = calendar.date(bySettingHour: bedtimeHour, minute: bedtimeMinute, second: 0, of: previousNight) else { continue }
 
             let totalSleepMinutes = Int.random(in: 380...510) // ~6.5–8.5 h
 
@@ -955,5 +963,76 @@ class HealthSeeder: ObservableObject {
 
         try await save(samples)
         return samples.count
+    }
+
+    // MARK: - State of Mind
+    // Requires iOS 18+. Never seeds today or yesterday (dayOffset 0 and 1) regardless
+    // of the period selected, so partial-day data doesn't skew correlation analysis.
+
+    func seedStateOfMind() async throws -> Int {
+        guard #available(iOS 18.0, *) else { return 0 }
+
+        var count = 0
+        let calendar = Calendar.current
+
+        let allLabels: [HKStateOfMind.Label] = [
+            .amazed, .amused, .angry, .anxious, .calm, .content,
+            .disappointed, .discouraged, .drained, .excited, .frustrated,
+            .grateful, .happy, .hopeful, .indifferent, .irritated, .joyful,
+            .lonely, .overwhelmed, .peaceful, .proud, .relieved, .sad,
+            .satisfied, .stressed, .surprised, .worried
+        ]
+
+        let allAssociations: [HKStateOfMind.Association] = [
+            .community, .currentEvents, .education, .family,
+            .fitness, .friends, .health, .hobbies, .identity,
+            .money, .partner, .selfCare, .tasks, .travel, .work
+        ]
+
+        // Start at dayOffset 2 — never today (0) or yesterday (1)
+        let startOffset = max(days - 1, 2)
+        let endOffset = 2
+
+        for dayOffset in stride(from: startOffset, through: endOffset, by: -1) {
+            let day = calendar.date(byAdding: .day, value: -dayOffset, to: Date())!
+            let dayStart = calendar.startOfDay(for: day)
+
+            // 1–3 momentary emotion checks throughout the day
+            let momentaryHours = [8, 13, 19].shuffled().prefix(Int.random(in: 1...3))
+            for hour in momentaryHours {
+                let ts = dayStart.addingTimeInterval(Double(hour * 3600 + Int.random(in: 0...1799)))
+                let valence = Double.random(in: -1.0...1.0)
+                let labels = Array(allLabels.shuffled().prefix(Int.random(in: 1...4)))
+                let associations = Array(allAssociations.shuffled().prefix(Int.random(in: 1...3)))
+
+                let sample = HKStateOfMind(
+                    date: ts,
+                    kind: .momentaryEmotion,
+                    valence: valence,
+                    labels: labels,
+                    associations: associations
+                )
+                try await store.save(sample)
+                count += 1
+            }
+
+            // 1 daily summary at end of day
+            let summaryTs = dayStart.addingTimeInterval(Double(Int.random(in: 79200...82800))) // 22h–23h
+            let summaryValence = Double.random(in: -1.0...1.0)
+            let summaryLabels = Array(allLabels.shuffled().prefix(Int.random(in: 2...5)))
+            let summaryAssociations = Array(allAssociations.shuffled().prefix(Int.random(in: 1...4)))
+
+            let summary = HKStateOfMind(
+                date: summaryTs,
+                kind: .momentaryEmotion,
+                valence: summaryValence,
+                labels: summaryLabels,
+                associations: summaryAssociations
+            )
+            try await store.save(summary)
+            count += 1
+        }
+
+        return count
     }
 }
