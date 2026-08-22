@@ -176,10 +176,19 @@ struct ContentView: View {
     var bottomBar: some View {
         VStack(spacing: 10) {
             if seeder.isComplete {
-                Label("Open the Health app on this Simulator to review the data.", systemImage: "checkmark.circle.fill")
-                    .font(.footnote)
-                    .foregroundStyle(.green)
-                    .multilineTextAlignment(.center)
+                let failed = seeder.failedCount
+                let done = seeder.categories.filter { $0.status == .done }.count
+                if failed == 0 {
+                    Label("All \(done) categories seeded. Open the Health app to review.", systemImage: "checkmark.circle.fill")
+                        .font(.footnote)
+                        .foregroundStyle(.green)
+                        .multilineTextAlignment(.center)
+                } else {
+                    Label("\(done) seeded, \(failed) failed. Check Xcode console for details.", systemImage: "exclamationmark.triangle.fill")
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                        .multilineTextAlignment(.center)
+                }
             }
 
             Button {
