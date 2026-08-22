@@ -107,6 +107,7 @@ class HealthSeeder: ObservableObject {
             // Vitals
             .oxygenSaturation, .bloodGlucose, .bloodPressureSystolic, .bloodPressureDiastolic,
             .bodyTemperature, .respiratoryRate, .peripheralPerfusionIndex,
+            .heartRateRecoveryOneMinute,
             .environmentalAudioExposure, .headphoneAudioExposure,
             .basalBodyTemperature,
             .walkingSpeed, .walkingStepLength, .walkingDoubleSupportPercentage,
@@ -124,15 +125,38 @@ class HealthSeeder: ObservableObject {
         var types: Set<HKSampleType> = Set(allQuantityTypes.compactMap { HKQuantityType.quantityType(forIdentifier: $0) })
         for id in allCategoryTypeIdentifiers { types.insert(HKCategoryType(id)) }
         types.insert(HKWorkoutType.workoutType())
+        if #available(iOS 18.0, *) {
+            types.insert(HKObjectType.stateOfMindType())
+        }
         return types
     }
+
+    @Published var failedCount: Int = 0
 
     // MARK: - Auth
 
     func requestAuth() async {
-        // Request write-only authorization in small batches with a delay between each
+        // State of Mind requires a separate auth call — mixing it with other types
+        // causes batch timeouts on iOS 26.
+        if #available(iOS 18.0, *) {
+            do {
+                try await store.requestAuthorization(toShare: [HKObjectType.stateOfMindType()], read: [])
+            } catch {
+                // Non-fatal — continue with other types
+                print("HealthSeeder: State of Mind auth failed — \(error)")
+            }
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+        }
+
+        // Request remaining types in small batches with a delay between each
         // to prevent the HealthKit permission dialog from overlapping itself.
-        let allTypes = Array(allTypesToWrite)
+        let quantityAndOtherTypes = allTypesToWrite.filter { type in
+            if #available(iOS 18.0, *) {
+                return type != HKObjectType.stateOfMindType()
+            }
+            return true
+        }
+        let allTypes = Array(quantityAndOtherTypes)
         let batchSize = 8
         var index = 0
         while index < allTypes.count {
@@ -144,9 +168,8 @@ class HealthSeeder: ObservableObject {
                 return
             }
             index += batchSize
-            // Give the system time to fully dismiss the previous dialog before showing the next
             if index < allTypes.count {
-                try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5s
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
             }
         }
     }
@@ -157,6 +180,7 @@ class HealthSeeder: ObservableObject {
         isRunning = true
         isComplete = false
         overallProgress = 0
+        failedCount = 0
         let total = Double(categories.count)
 
         for i in categories.indices {
@@ -167,6 +191,8 @@ class HealthSeeder: ObservableObject {
                 categories[i].status = .done
             } catch {
                 categories[i].status = .failed
+                failedCount += 1
+                print("HealthSeeder: category \(categories[i].name) failed — \(error)")
             }
             overallProgress = Double(i + 1) / total
         }
@@ -409,6 +435,15 @@ class HealthSeeder: ObservableObject {
             samples.append(quantitySample(type: .restingHeartRate, quantity: HKQuantity(unit: HKUnit(from: "count/min"), doubleValue: randomBetween(50, 72)), start: dayStart.addingTimeInterval(28800)))
             samples.append(quantitySample(type: .heartRateVariabilitySDNN, quantity: HKQuantity(unit: .secondUnit(with: .milli), doubleValue: randomBetween(20, 80)), start: dayStart.addingTimeInterval(25200)))
 
+            // Heart Rate Recovery — recorded ~1 min after a workout ends
+            // Typical HRR: 12–40 bpm drop in first minute post-exercise
+            if dayOffset % 2 == 0 {
+                let workoutEndHour = Int.random(in: 14...19)
+                let recoveryTs = dayStart.addingTimeInterval(Double(workoutEndHour * 3600 + 60))
+                let q = HKQuantity(unit: HKUnit(from: "count/min"), doubleValue: randomBetween(12, 40))
+                samples.append(quantitySample(type: .heartRateRecoveryOneMinute, quantity: q, start: recoveryTs, end: recoveryTs.addingTimeInterval(60)))
+            }
+
             if dayOffset % 7 == 0 {
                 samples.append(quantitySample(type: .vo2Max, quantity: HKQuantity(unit: HKUnit(from: "ml/kg*min"), doubleValue: randomBetween(35, 55)), start: dayStart.addingTimeInterval(36000)))
             }
@@ -632,38 +667,141 @@ class HealthSeeder: ObservableObject {
 
     func seedWorkouts() async throws -> Int {
         let calendar = Calendar.current
-        let workoutTypes: [HKWorkoutActivityType] = [
-            .running, .cycling, .walking, .swimming, .functionalStrengthTraining,
+        let nonRunningTypes: [HKWorkoutActivityType] = [
+            .cycling, .walking, .swimming, .functionalStrengthTraining,
             .yoga, .highIntensityIntervalTraining, .elliptical, .rowing
         ]
+        let hrUnit = HKUnit(from: "count/min")
+        let intervalSec: TimeInterval = 10
+
+        let watchDevice = HKDevice(
+            name: "Apple Watch",
+            manufacturer: "Apple Inc.",
+            model: "Watch",
+            hardwareVersion: nil,
+            firmwareVersion: nil,
+            softwareVersion: nil,
+            localIdentifier: nil,
+            udiDeviceIdentifier: nil
+        )
+
         var count = 0
 
         for dayOffset in 0..<days {
             guard dayOffset % 2 == 0 || Bool.random() else { continue }
             let day = calendar.date(byAdding: .day, value: -dayOffset, to: Date())!
-            let workoutType = workoutTypes.randomElement()!
             let hour = Int.random(in: 6...19)
-            let start = calendar.date(bySettingHour: hour, minute: Int.random(in: 0...30), second: 0, of: day)!
-            let duration = TimeInterval(Int.random(in: 20...90) * 60)
-            let end = start.addingTimeInterval(duration)
+            let workoutStart = calendar.date(bySettingHour: hour, minute: Int.random(in: 0...30), second: 0, of: day)!
 
-            let config = HKWorkoutConfiguration()
-            config.activityType = workoutType
-            let builder = HKWorkoutBuilder(healthStore: store, configuration: config, device: nil)
+            // ~50% of workouts are running with granular samples; rest are other activities
+            let isRunning = Double.random(in: 0...1) < 0.55
 
-            try await builder.beginCollection(at: start)
+            if isRunning {
+                // Granular running workout — 40–60 min
+                let durationMin = Int.random(in: 40...60)
+                let workoutEnd = workoutStart.addingTimeInterval(TimeInterval(durationMin * 60))
 
-            let aeSample = HKQuantitySample(type: HKQuantityType(.activeEnergyBurned), quantity: HKQuantity(unit: .kilocalorie(), doubleValue: randomBetween(150, 700)), start: start, end: end)
-            try await builder.addSamples([aeSample])
+                // Full profile (HR + distance) or basic (HR only) — 55/45 split
+                let includeDistance = Double.random(in: 0...1) < 0.55
 
-            if [.running, .cycling, .walking].contains(workoutType) {
-                let dist = workoutType == .cycling ? randomBetween(5000, 40000) : randomBetween(2000, 12000)
-                let dSample = HKQuantitySample(type: HKQuantityType(.distanceWalkingRunning), quantity: HKQuantity(unit: .meter(), doubleValue: dist), start: start, end: end)
-                try await builder.addSamples([dSample])
+                let totalIntervals = Int(workoutEnd.timeIntervalSince(workoutStart) / intervalSec)
+                var samples: [HKSample] = []
+
+                // Granular HR every 10 s — first half ~145 bpm, second half ~155 bpm
+                var t = workoutStart
+                for i in 0..<totalIntervals {
+                    let progress = Double(i) / Double(totalIntervals)
+                    let base: Double = progress < 0.5 ? 145 : 155
+                    let noise = Double.random(in: -8...8)
+                    let spike = Bool.random() && Int.random(in: 0...20) == 0 ? Double.random(in: 10...20) : 0
+                    let bpm = max(120, min(185, base + noise + spike))
+                    samples.append(HKQuantitySample(
+                        type: HKQuantityType(.heartRate),
+                        quantity: HKQuantity(unit: hrUnit, doubleValue: bpm),
+                        start: t, end: t
+                    ))
+                    t = t.addingTimeInterval(intervalSec)
+                }
+
+                // Incremental distance every 10 s summing to ~9 km (scaled to duration)
+                if includeDistance {
+                    let targetTotal = 9000.0 * Double(durationMin) / 50.0
+                    let targetPerInterval = targetTotal / Double(totalIntervals)
+                    t = workoutStart
+                    for _ in 0..<totalIntervals {
+                        let increment = targetPerInterval * Double.random(in: 0.85...1.15)
+                        let end = t.addingTimeInterval(intervalSec)
+                        samples.append(HKQuantitySample(
+                            type: HKQuantityType(.distanceWalkingRunning),
+                            quantity: HKQuantity(unit: .meter(), doubleValue: increment),
+                            start: t, end: end
+                        ))
+                        t = end
+                    }
+                }
+
+                // Active energy for full window
+                samples.append(HKQuantitySample(
+                    type: HKQuantityType(.activeEnergyBurned),
+                    quantity: HKQuantity(unit: .kilocalorie(), doubleValue: randomBetween(350, 600)),
+                    start: workoutStart, end: workoutEnd
+                ))
+
+                // Recovery HR tail — 2 min after workout, falls from ~150 to ~110 bpm
+                var recoveryBpm = 150.0
+                var rt = workoutEnd
+                let recoveryEnd = workoutEnd.addingTimeInterval(120)
+                while rt < recoveryEnd {
+                    recoveryBpm = max(110, recoveryBpm - Double.random(in: 2...5))
+                    samples.append(HKQuantitySample(
+                        type: HKQuantityType(.heartRate),
+                        quantity: HKQuantity(unit: hrUnit, doubleValue: recoveryBpm),
+                        start: rt, end: rt
+                    ))
+                    rt = rt.addingTimeInterval(intervalSec)
+                }
+
+                let config = HKWorkoutConfiguration()
+                config.activityType = .running
+                config.locationType = .outdoor
+                let builder = HKWorkoutBuilder(healthStore: store, configuration: config, device: watchDevice)
+                try await builder.beginCollection(at: workoutStart)
+                try await builder.addSamples(samples)
+                try await builder.endCollection(at: recoveryEnd)
+                _ = try await builder.finishWorkout()
+
+            } else {
+                // Basic workout — other activity types, single-sample approach
+                let workoutType = nonRunningTypes.randomElement()!
+                let duration = TimeInterval(Int.random(in: 20...90) * 60)
+                let workoutEnd = workoutStart.addingTimeInterval(duration)
+
+                let config = HKWorkoutConfiguration()
+                config.activityType = workoutType
+                let builder = HKWorkoutBuilder(healthStore: store, configuration: config, device: nil)
+                try await builder.beginCollection(at: workoutStart)
+
+                let aeSample = HKQuantitySample(
+                    type: HKQuantityType(.activeEnergyBurned),
+                    quantity: HKQuantity(unit: .kilocalorie(), doubleValue: randomBetween(150, 500)),
+                    start: workoutStart, end: workoutEnd
+                )
+                try await builder.addSamples([aeSample])
+
+                if workoutType == .cycling {
+                    let dist = randomBetween(5000, 40000)
+                    let dSample = HKQuantitySample(
+                        type: HKQuantityType(.distanceWalkingRunning),
+                        quantity: HKQuantity(unit: .meter(), doubleValue: dist),
+                        start: workoutStart, end: workoutEnd
+                    )
+                    try await builder.addSamples([dSample])
+                }
+
+                try await builder.endCollection(at: workoutEnd)
+                _ = try await builder.finishWorkout()
             }
 
-            try await builder.endCollection(at: end)
-            _ = try await builder.finishWorkout()
             count += 1
         }
 
@@ -970,7 +1108,10 @@ class HealthSeeder: ObservableObject {
     // of the period selected, so partial-day data doesn't skew correlation analysis.
 
     func seedStateOfMind() async throws -> Int {
-        guard #available(iOS 18.0, *) else { return 0 }
+        guard #available(iOS 18.0, *) else {
+            print("HealthSeeder: State of Mind skipped — requires iOS 18+")
+            return 0
+        }
 
         var count = 0
         let calendar = Calendar.current
@@ -980,13 +1121,16 @@ class HealthSeeder: ObservableObject {
             .disappointed, .discouraged, .drained, .excited, .frustrated,
             .grateful, .happy, .hopeful, .indifferent, .irritated, .joyful,
             .lonely, .overwhelmed, .peaceful, .proud, .relieved, .sad,
-            .satisfied, .stressed, .surprised, .worried
+            .satisfied, .stressed, .surprised, .worried,
+            .annoyed, .confident, .ashamed, .brave, .disgusted,
+            .embarrassed, .guilty, .hopeless, .jealous, .passionate, .scared
         ]
 
         let allAssociations: [HKStateOfMind.Association] = [
             .community, .currentEvents, .education, .family,
             .fitness, .friends, .health, .hobbies, .identity,
-            .money, .partner, .selfCare, .tasks, .travel, .work
+            .money, .partner, .selfCare, .tasks, .travel, .work,
+            .dating, .spirituality, .weather
         ]
 
         // Start at dayOffset 2 — never today (0) or yesterday (1)
@@ -1005,32 +1149,42 @@ class HealthSeeder: ObservableObject {
                 let labels = Array(allLabels.shuffled().prefix(Int.random(in: 1...4)))
                 let associations = Array(allAssociations.shuffled().prefix(Int.random(in: 1...3)))
 
-                let sample = HKStateOfMind(
-                    date: ts,
-                    kind: .momentaryEmotion,
-                    valence: valence,
-                    labels: labels,
-                    associations: associations
-                )
-                try await store.save(sample)
-                count += 1
+                do {
+                    let sample = HKStateOfMind(
+                        date: ts,
+                        kind: .momentaryEmotion,
+                        valence: valence,
+                        labels: labels,
+                        associations: associations
+                    )
+                    try await store.save(sample)
+                    count += 1
+                } catch {
+                    print("HealthSeeder: State of Mind momentaryEmotion save failed — \(error)")
+                    throw error
+                }
             }
 
-            // 1 daily summary at end of day
-            let summaryTs = dayStart.addingTimeInterval(Double(Int.random(in: 79200...82800))) // 22h–23h
+            // 1 daily mood at end of day (.dailyMood = kind rawValue 2)
+            let summaryTs = dayStart.addingTimeInterval(Double(Int.random(in: 79200...82800)))
             let summaryValence = Double.random(in: -1.0...1.0)
             let summaryLabels = Array(allLabels.shuffled().prefix(Int.random(in: 2...5)))
             let summaryAssociations = Array(allAssociations.shuffled().prefix(Int.random(in: 1...4)))
 
-            let summary = HKStateOfMind(
-                date: summaryTs,
-                kind: .momentaryEmotion,
-                valence: summaryValence,
-                labels: summaryLabels,
-                associations: summaryAssociations
-            )
-            try await store.save(summary)
-            count += 1
+            do {
+                let summary = HKStateOfMind(
+                    date: summaryTs,
+                    kind: .dailyMood,
+                    valence: summaryValence,
+                    labels: summaryLabels,
+                    associations: summaryAssociations
+                )
+                try await store.save(summary)
+                count += 1
+            } catch {
+                print("HealthSeeder: State of Mind dailyMood save failed — \(error)")
+                throw error
+            }
         }
 
         return count
