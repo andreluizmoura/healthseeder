@@ -106,7 +106,32 @@ struct ContentView: View {
                 .disabled(seeder.isRunning || seeder.isDeleting)
             }
             .padding(.horizontal)
-            .padding(.bottom, 8)
+
+            // Weight profile picker. Selects which analysis state the generated
+            // body-mass series should drive the Weight Patterns feature to. The
+            // weight series uses the profile's own history length, not the
+            // Period picker above (which still governs every other category).
+            HStack {
+                Text("Weight profile:")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Picker("Profile", selection: $seeder.selectedWeightProfile) {
+                    ForEach(WeightProfile.allCases) { profile in
+                        Text(profile.label).tag(profile)
+                    }
+                }
+                .pickerStyle(.menu)
+                .disabled(seeder.isRunning || seeder.isDeleting)
+            }
+            .padding(.horizontal)
+
+            Text(seeder.selectedWeightProfile.detail)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal)
+                .padding(.bottom, 8)
         }
         .background(Color(.systemGroupedBackground))
     }
@@ -379,7 +404,7 @@ struct NuclearResetView: View {
         NavigationStack {
             List {
                 Section {
-                    Text("The only way to fully wipe all Apple Health data in the Simulator — including data from other sources — is to erase the entire Simulator. This takes about 10 seconds and only affects this Simulator device.")
+                    Text("The only way to fully wipe all Apple Health data in the Simulator, including data from other sources, is to erase the entire Simulator. This takes about 10 seconds and only affects this Simulator device.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .padding(.vertical, 4)
@@ -387,14 +412,14 @@ struct NuclearResetView: View {
                     Label("Why this is needed", systemImage: "info.circle")
                 }
 
-                Section("Option 1 — Simulator menu (fastest)") {
+                Section("Option 1, Simulator menu (fastest)") {
                     step(number: "1", text: "Bring the Simulator window to focus")
-                    step(number: "2", text: "In the menu bar: Device > Erase All Content and Settings…")
+                    step(number: "2", text: "In the menu bar: Device > Erase All Content and Settings")
                     step(number: "3", text: "Confirm in the dialog")
                     step(number: "4", text: "Wait for the Simulator to reboot, then re-run HealthSeeder from Xcode")
                 }
 
-                Section("Option 2 — Terminal") {
+                Section("Option 2, Terminal") {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Run this command to erase the currently booted Simulator:")
                             .font(.caption)
